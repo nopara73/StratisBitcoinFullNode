@@ -11,9 +11,10 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         public Network Network { get; }
         public PubKey PubKey { get; }
 
-        public Script P2pkhScriptPubKey { get; }
-        public Script P2wpkhScriptPubKey { get; }
-        public Script P2shOverP2wpkhScriptPubKey { get; }
+        public Script P2pkScript { get; }
+        public Script P2pkhScript { get; }
+        public Script P2wpkhScript { get; }
+        public Script P2shOverP2wpkhScript { get; }
 
         public BitcoinPubKeyAddress P2pkhAddress { get; }
         public BitcoinWitPubKeyAddress P2wpkhAddress { get; }
@@ -34,13 +35,14 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             this.Path = path ?? throw new ArgumentNullException(nameof(path));
             this.Label = label ?? throw new ArgumentNullException(nameof(label));
 
-            this.P2pkhScriptPubKey = pubKey.Hash.ScriptPubKey;
-            this.P2wpkhScriptPubKey = pubKey.WitHash.ScriptPubKey;
-            this.P2shOverP2wpkhScriptPubKey = this.P2wpkhScriptPubKey.Hash.ScriptPubKey;
+            this.P2pkhScript = pubKey.ScriptPubKey;
+            this.P2pkhScript = pubKey.Hash.ScriptPubKey;
+            this.P2wpkhScript = pubKey.WitHash.ScriptPubKey;
+            this.P2shOverP2wpkhScript = this.P2wpkhScript.Hash.ScriptPubKey;
 
             this.P2pkhAddress = pubKey.GetAddress(network);
             this.P2wpkhAddress = pubKey.GetSegwitAddress(network);
-            this.P2shOverP2wpkhAddress = this.P2wpkhScriptPubKey.GetScriptAddress(network);
+            this.P2shOverP2wpkhAddress = this.P2wpkhScript.GetScriptAddress(network);
 
             this.State = HdKeyState.Clean;
             this.Label = label;

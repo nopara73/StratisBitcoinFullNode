@@ -171,9 +171,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             HdPubKey hdPubKey = this.Keys
                 .Where(x => x.State != HdKeyState.Used)
                 ?.SingleOrDefault(x =>
-                    x.P2pkhScriptPubKey == scriptPubKey
-                    || x.P2wpkhScriptPubKey == scriptPubKey
-                    || x.P2shOverP2wpkhScriptPubKey == scriptPubKey);
+                    x.P2pkhScript == scriptPubKey
+                    || x.P2wpkhScript == scriptPubKey
+                    || x.P2shOverP2wpkhScript == scriptPubKey);
             if (hdPubKey == default(HdPubKey))
             {
                 return false;
