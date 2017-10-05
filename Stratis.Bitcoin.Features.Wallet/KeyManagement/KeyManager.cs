@@ -40,7 +40,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
         public int CreationHeight { get; set; }
-        private string WalletPassword { get; }
 
         public ConcurrentHashSet<HdAccount> Accounts { get; }
         public ConcurrentHashSet<HdPubKey> Keys { get; }
@@ -49,9 +48,16 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         public byte[] ChainCode { get; private set; }
         private SemaphoreSlim InitializeSemaphore { get; }
 
-        public KeyManager(string walletPassword, HdPurpose purpose, Network network, int creationHeight = 0)
+        public bool IsWatchOnly
         {
-            this.WalletPassword = walletPassword ?? throw new ArgumentNullException(nameof(walletPassword));
+            get
+            {
+                return this.EncryptedSecret == null;
+            }
+        }
+
+        public KeyManager(HdPurpose purpose, Network network, int creationHeight = 0)
+        {
             this.Purpose = purpose;
             this.CoinType = network ?? throw new ArgumentNullException(nameof(network));
             if (creationHeight < 0) throw new ArgumentException(nameof(creationHeight));
@@ -106,36 +112,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }, cancel).ConfigureAwait(false);
         }
         
-        public async Task<ExtPubKey> GetExtPubKeyAsync(KeyPath keyPath, string password, CancellationToken cancel)
-        {
-            return await Task.Run(() =>
-            {
-                if (password == null) throw new ArgumentNullException(nameof(password));
-                if (keyPath == null) throw new ArgumentNullException(nameof(keyPath));
-                if (password != this.WalletPassword) throw new SecurityException("Wrong password");
-
-                var key = this.EncryptedSecret.GetKey(password);
-                var extKey = new ExtKey(key, this.ChainCode);
-                var accountExtPubKey = extKey.Derive(keyPath).Neuter();
-                return accountExtPubKey;
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public async Task<ExtKey> GetExtKey(KeyPath keyPath, string password, CancellationToken cancel)
-        {
-            return await Task.Run(() =>
-            {
-                if (password == null) throw new ArgumentNullException(nameof(password));
-                if (keyPath == null) throw new ArgumentNullException(nameof(keyPath));
-                if (password != this.WalletPassword) throw new SecurityException("Wrong password");
-
-                var key = this.EncryptedSecret.GetKey(password);
-                var extKey = new ExtKey(key, this.ChainCode);
-                var accountExtKey = extKey.Derive(keyPath);
-                return accountExtKey;
-            }, cancel).ConfigureAwait(false);
-        }
-
         #region States
 
         /// <summary>
@@ -214,14 +190,14 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         #region Initalization
 
-        public async Task<Mnemonic> InitializeNewAsync(string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
+        public async Task<Mnemonic> InitializeNewAsync(string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
         {
             return await Task.Run(async () =>
             {
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.EncryptedSecret != null) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                     if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
@@ -230,7 +206,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
                     ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
 
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(this.WalletPassword, this.CoinType);
+                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
                     this.ChainCode = extKey.ChainCode;
 
                     return mnemonic;
@@ -242,21 +218,21 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }, cancel).ConfigureAwait(false);
         }
 
-        public async Task InitializeFromMnemonicAsync(string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
+        public async Task InitializeFromMnemonicAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
         {
             await Task.Run(async () =>
             {
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.EncryptedSecret != null) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                     if (mnemonic == null) throw new ArgumentNullException(nameof(mnemonic));
 
                     ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
 
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(this.WalletPassword, this.CoinType);
+                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
                     this.ChainCode = extKey.ChainCode;
                 }
                 finally
@@ -266,18 +242,18 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }, cancel).ConfigureAwait(false);
         }
 
-        public async Task InitializeFromExtKey(ExtKey extKey, CancellationToken cancel)
+        public async Task InitializeFromExtKey(string walletPassword, ExtKey extKey, CancellationToken cancel)
         {
             await Task.Run(async () =>
             {
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.EncryptedSecret != null) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (extKey == null) throw new ArgumentNullException(nameof(extKey));
 
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(this.WalletPassword, this.CoinType);
+                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
                     this.ChainCode = extKey.ChainCode;
                 }
                 finally
@@ -295,51 +271,32 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         {
             return this.Accounts.Any(x => x.Index == index);
         }
-                
-        public async Task<bool> TryAddAccountAsync(int index, string label, CancellationToken cancel)
-        {
-            if (label == null) return false;
-            if(ContainsAccount(index))
-            {
-                return false;
-            }
 
-            var keyPath = this.CoinTypePath.Derive(index, true);
-            var extPubKey = await GetExtPubKeyAsync(keyPath, this.WalletPassword, cancel);
-            return this.Accounts.Add(new HdAccount(extPubKey, keyPath, label));
+        public bool ContainsAccount(string label)
+        {
+            return this.Accounts.Any(x => x.Label == label);
         }
 
-        public async Task<bool> TryAddAccountAsync(string label, CancellationToken cancel)
+        public async Task<bool> TryAddAccountAsync(string walletPassword, string label, CancellationToken cancel)
         {
-            if (label == null) return false;
-
-            PubKey pubKey = this.EncryptedSecret.GetKey(this.WalletPassword).PubKey;
-            var extPubKey = new ExtPubKey(pubKey, this.ChainCode);
-            
-            for (int i = 0; i <= this.Accounts.Count; i++)
+            return await Task.Run(() =>
             {
-                if (!ContainsAccount(i))
+                if (label == null) return false;
+
+                Key key = this.EncryptedSecret.GetKey(walletPassword);
+                var extKey = new ExtKey(key, this.ChainCode);
+
+                for (int i = 0; i <= this.Accounts.Count; i++)
                 {
-                    var keyPath = this.CoinTypePath.Derive(i, true);
-                    ExtPubKey accountExtPubKey = await GetExtPubKeyAsync(keyPath, this.WalletPassword, cancel).ConfigureAwait(false);
-                    return this.Accounts.Add(new HdAccount(accountExtPubKey, keyPath, label));
+                    if (!ContainsAccount(i))
+                    {
+                        var keyPath = this.CoinTypePath.Derive(i, true);
+                        ExtPubKey accountExtPubKey = extKey.Derive(keyPath).Neuter();
+                        return this.Accounts.Add(new HdAccount(accountExtPubKey, keyPath, label));
+                    }
                 }
-            }
-            throw new NotSupportedException(); // This should never happen
-        }
-
-        public bool TryRemoveAccount(HdAccount account)
-        {
-            if (account == null) return false;
-
-            return this.Accounts.TryRemove(account);
-        }
-
-        public bool TryRemoveAccount(int index)
-        {
-            HdAccount account = this.Accounts.SingleOrDefault(x => x.Index == index);
-            if (account == default(HdAccount)) return false;
-            return this.Accounts.TryRemove(account);
+                throw new NotSupportedException(); // This should never happen
+            }, cancel).ConfigureAwait(false);
         }
 
         public bool TryChangeAccountLabel(int index, string newLabel)
@@ -349,6 +306,22 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             if (account == default(HdAccount)) return false;
             this.Accounts.TryRemove(account);
             return this.Accounts.Add(new HdAccount(account.ExtPubKey, account.Path, newLabel));
+        }
+
+        /// <summary>
+        /// Labels are not unique, so all oldLabel match will be changed
+        /// </summary>
+        public bool TryChangeAccountLabels(string oldLabel, string newLabel)
+        {
+            if (oldLabel == null) return false;
+            if (newLabel == null) return false;
+            var accounts = this.Accounts.Where(x => x.Label == oldLabel).Select(x=>x).ToList();
+            if (accounts.Count() == 0) return false;
+            foreach(var account in accounts)
+            {
+                account.Label = newLabel;
+            }
+            return true;
         }
 
         #endregion
