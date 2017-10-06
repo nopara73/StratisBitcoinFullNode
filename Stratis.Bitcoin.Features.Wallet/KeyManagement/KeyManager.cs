@@ -126,12 +126,12 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         /// <summary>
         /// Note: used keys cannot be updated
         /// </summary>
-        public bool TryUpdateState (PubKey pubKey, HdKeyState state)
+        public bool TryUpdateState (PubKey pubKey, Bip44KeyState state)
         {
             // used keys should never be updated
             // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
             HdPubKey hdPubKey = this.Keys
-                .Where(x=>x.State != HdKeyState.Used)
+                .Where(x=>x.State != Bip44KeyState.Used)
                 ?.SingleOrDefault(x => x.PubKey.Hash == pubKey.Hash);
             if(hdPubKey == default(HdPubKey))
             {
@@ -148,12 +148,12 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         /// <summary>
         /// Note: used keys cannot be updated
         /// </summary>
-        public bool TryUpdateState(BitcoinAddress address, HdKeyState state)
+        public bool TryUpdateState(BitcoinAddress address, Bip44KeyState state)
         {
             // used keys should never be updated
             // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
             HdPubKey hdPubKey = this.Keys
-                .Where(x => x.State != HdKeyState.Used)
+                .Where(x => x.State != Bip44KeyState.Used)
                 ?.SingleOrDefault(x => 
                     x.P2pkhAddress == address
                     || x.P2wpkhAddress == address
@@ -173,12 +173,12 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         /// <summary>
         /// Note: used keys cannot be updated
         /// </summary>
-        public bool TryUpdateState(Script scriptPubKey, HdKeyState state)
+        public bool TryUpdateState(Script scriptPubKey, Bip44KeyState state)
         {
             // used keys should never be updated
             // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
             HdPubKey hdPubKey = this.Keys
-                .Where(x => x.State != HdKeyState.Used)
+                .Where(x => x.State != Bip44KeyState.Used)
                 ?.SingleOrDefault(x =>
                     x.P2pkhScript == scriptPubKey
                     || x.P2wpkhScript == scriptPubKey

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
-    public enum HdKeyState
+    public enum Bip44KeyState
     {
         Clean,
         Locked,
