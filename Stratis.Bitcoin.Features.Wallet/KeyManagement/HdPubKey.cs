@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
-    public class HdPubKey
+    public class HdPubKey : IEquatable<HdPubKey>
     {
         public Network Network { get; }
         public PubKey PubKey { get; }
@@ -60,5 +60,27 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
             this.Index = (int)indexes[1];
         }
+
+        #region Equality
+
+        public override bool Equals(object obj) => obj is HdPubKey && this == (HdPubKey)obj;
+        public bool Equals(HdPubKey other) => this == other;
+        public override int GetHashCode()
+        {
+            var hash = this.PubKey.ToHex().GetHashCode();
+            hash = hash ^ this.Path.ToString().GetHashCode();
+            return hash;
+        }
+        public static bool operator ==(HdPubKey x, HdPubKey y)
+        {
+            return x.PubKey.ToHex() == y.PubKey.ToHex() && x.Path.ToString() == y.Path.ToString();
+        }
+
+        public static bool operator !=(HdPubKey x, HdPubKey y)
+        {
+            return !(x == y);
+        }
+
+        #endregion
     }
 }
