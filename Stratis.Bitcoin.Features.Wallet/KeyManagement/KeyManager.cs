@@ -49,11 +49,19 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         public byte[] ChainCode { get; private set; }
         private SemaphoreSlim InitializeSemaphore { get; }
 
+        public bool IsDecrypted
+        {
+            get
+            {
+                return this.EncryptedSecret != null;
+            }
+        }
+
         public bool IsWatchOnly
         {
             get
             {
-                return this.EncryptedSecret == null;
+                return !this.IsDecrypted && this.Accounts != null && this.Accounts.Count() != 0;
             }
         }
 
@@ -198,7 +206,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                     if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
@@ -226,7 +234,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                     if (mnemonic == null) throw new ArgumentNullException(nameof(mnemonic));
@@ -250,7 +258,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
                 try
                 {
-                    if (this.IsWatchOnly) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
                     
                     if (extKey == null) throw new ArgumentNullException(nameof(extKey));
 
@@ -262,6 +270,20 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     this.InitializeSemaphore.SafeRelease();
                 }
             }, cancel).ConfigureAwait(false);
+        }
+
+        public void InitializeWatchOnly(IEnumerable<HdAccount> accounts, IEnumerable<HdPubKey> keys)
+        {
+            if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+            if(this.IsWatchOnly) if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
+            foreach (var account in accounts)
+            {
+                this.Accounts.Add(account);
+            }
+            foreach(var key in keys)
+            {
+                this.Keys.Add(key);
+            }
         }
 
         #endregion
