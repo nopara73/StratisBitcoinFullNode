@@ -74,7 +74,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         {
             get
             {
-                return this.p2wpkhAddress ?? (this.p2wpkhAddress = this.PubKey.GetSegwitAddress(this.Network);
+                return this.p2wpkhAddress ?? (this.p2wpkhAddress = this.PubKey.GetSegwitAddress(this.Network));
             }
         }
 
