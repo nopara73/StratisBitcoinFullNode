@@ -17,14 +17,11 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
     public class KeyManager
     {
         // m / purpose' / coin_type' / account' / change / address_index
-        public HdPurpose Purpose { get; }
         public KeyPath PurposePath
         {
             get
             {
-                if (this.Purpose == HdPurpose.Bip44) return new KeyPath("m/44'");
-                if (this.Purpose == HdPurpose.Bip49) return new KeyPath("m/49'");
-                throw new NotSupportedException(this.Purpose.ToString());
+                return new KeyPath("m/44'");
             }
         }
         public Network CoinType { get; }
@@ -42,8 +39,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         public int CreationHeight { get; set; }
 
-        public ConcurrentHashSet<HdAccount> Accounts { get; }
-        public ConcurrentHashSet<HdPubKey> Keys { get; }
+        public ConcurrentHashSet<Bip44Account> Accounts { get; }
 
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
         public byte[] ChainCode { get; private set; }
@@ -65,134 +61,80 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public KeyManager(HdPurpose purpose, Network network, int creationHeight = 0)
+        public KeyManager(Network network, int creationHeight = 0)
         {
-            this.Purpose = purpose;
             this.CoinType = network ?? throw new ArgumentNullException(nameof(network));
             if (creationHeight < 0) throw new ArgumentException(nameof(creationHeight));
             this.CreationHeight = creationHeight;
-            this.Accounts = new ConcurrentHashSet<HdAccount>();
-            this.Keys = new ConcurrentHashSet<HdPubKey>();
+            this.Accounts = new ConcurrentHashSet<Bip44Account>();
             this.EncryptedSecret = null;
             this.ChainCode = null;
             this.InitializeSemaphore = new SemaphoreSlim(1, 1);
         }
-
-        public async Task<HdPubKey> CreateNewKeyAsync(int accountIndex, bool isInternal, string label, CancellationToken cancel)
-        {
-            return await Task.Run(() =>
-            {
-                if (accountIndex < 0) throw new ArgumentOutOfRangeException(nameof(accountIndex));
-                var account = this.Accounts.SingleOrDefault(x => x.Index == accountIndex);
-                if (account == default(HdAccount))
-                {
-                    throw new InvalidOperationException("Account does not exist");
-                }
-
-                KeyPath path = null;
-                PubKey pubKey = null;
-                var index = 0;
-                if (isInternal)
-                {
-                    HdPubKey prevHdPubKey = this.Keys.Where(x => x.IsInternal).OrderByDescending(x => x.Index).FirstOrDefault();
-                    if (prevHdPubKey != default(HdPubKey))
-                    {
-                        index = prevHdPubKey.Index + 1;
-                    }
-                    path = account.InternalChainPath.Derive(index, false);
-                    pubKey = account.InternalChainExtPubKey.Derive(index, false).PubKey;
-                }
-                else
-                {
-                    HdPubKey prevHdPubKey = this.Keys.Where(x => !x.IsInternal).OrderByDescending(x => x.Index).FirstOrDefault();
-                    if (prevHdPubKey != default(HdPubKey))
-                    {
-                        index = prevHdPubKey.Index + 1;
-                    }
-                    path = account.ExternalChainPath.Derive(index, false);
-                    pubKey = account.ExternalChainExtPubKey.Derive(index, false).PubKey;
-                }
-
-                var hdPubKey = new HdPubKey(this.CoinType, pubKey, path, label);
-
-                this.Keys.Add(hdPubKey);
-
-                return hdPubKey;
-            }, cancel).ConfigureAwait(false);
-        }
         
         #region States
 
-        /// <summary>
-        /// Note: used keys cannot be updated
-        /// </summary>
         public bool TryUpdateState (PubKey pubKey, Bip44KeyState state)
         {
-            // used keys should never be updated
-            // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
-            HdPubKey hdPubKey = this.Keys
-                .Where(x=>x.State != Bip44KeyState.Used)
-                ?.SingleOrDefault(x => x.PubKey.Hash == pubKey.Hash);
-            if(hdPubKey == default(HdPubKey))
+            foreach(var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
             {
-                return false;
+                if(key.PubKey == pubKey)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            if(hdPubKey.State == state)
+            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
             {
-                return false;
+                if (key.PubKey == pubKey)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            hdPubKey.State = state;
-            return true;
+            return false;
         }
 
-        /// <summary>
-        /// Note: used keys cannot be updated
-        /// </summary>
         public bool TryUpdateState(BitcoinAddress address, Bip44KeyState state)
         {
-            // used keys should never be updated
-            // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
-            HdPubKey hdPubKey = this.Keys
-                .Where(x => x.State != Bip44KeyState.Used)
-                ?.SingleOrDefault(x => 
-                    x.P2pkhAddress == address
-                    || x.P2wpkhAddress == address
-                    || x.P2shOverP2wpkhAddress == address);
-            if (hdPubKey == default(HdPubKey))
+            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
             {
-                return false;
+                if (key.P2pkhAddress == address || key.P2wpkhAddress == address || key.P2shOverP2wpkhAddress == address)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            if (hdPubKey.State == state)
+            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
             {
-                return false;
+                if (key.P2pkhAddress == address || key.P2wpkhAddress == address || key.P2shOverP2wpkhAddress == address)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            hdPubKey.State = state;
-            return true;
+            return false;
         }
 
-        /// <summary>
-        /// Note: used keys cannot be updated
-        /// </summary>
-        public bool TryUpdateState(Script scriptPubKey, Bip44KeyState state)
+        public bool TryUpdateState(Script script, Bip44KeyState state)
         {
-            // used keys should never be updated
-            // even if a tx falls out of the mempool, the tx and the scriptPubKey had been already seen by nodes
-            HdPubKey hdPubKey = this.Keys
-                .Where(x => x.State != Bip44KeyState.Used)
-                ?.SingleOrDefault(x =>
-                    x.P2pkhScript == scriptPubKey
-                    || x.P2wpkhScript == scriptPubKey
-                    || x.P2shOverP2wpkhScript == scriptPubKey);
-            if (hdPubKey == default(HdPubKey))
+            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
             {
-                return false;
+                if (key.P2pkScript == script || key.P2pkhScript == script || key.P2wpkhScript == script || key.P2shOverP2wpkhScript == script)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            if (hdPubKey.State == state)
+            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
             {
-                return false;
+                if (key.P2pkScript == script || key.P2pkhScript == script || key.P2wpkhScript == script || key.P2shOverP2wpkhScript == script)
+                {
+                    key.State = state;
+                    return true;
+                }
             }
-            hdPubKey.State = state;
-            return true;
+            return false;
         }
 
         #endregion
@@ -272,17 +214,13 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }, cancel).ConfigureAwait(false);
         }
 
-        public void InitializeWatchOnly(IEnumerable<HdAccount> accounts, IEnumerable<HdPubKey> keys)
+        public void InitializeWatchOnly(IEnumerable<Bip44Account> accounts, IEnumerable<Bip44PubKey> keys)
         {
             if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
             if(this.IsWatchOnly) if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
             foreach (var account in accounts)
             {
                 this.Accounts.Add(account);
-            }
-            foreach(var key in keys)
-            {
-                this.Keys.Add(key);
             }
         }
 
@@ -315,7 +253,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         var keyPath = this.CoinTypePath.Derive(i, true);
                         ExtPubKey accountExtPubKey = extKey.Derive(keyPath).Neuter();
-                        return this.Accounts.Add(new HdAccount(accountExtPubKey, keyPath, label));
+                        return this.Accounts.Add(new Bip44Account(accountExtPubKey, keyPath, this.CoinType, label));
                     }
                 }
                 throw new NotSupportedException(); // This should never happen
@@ -326,9 +264,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         { 
             if (newLabel == null) return false;
             var account = this.Accounts.SingleOrDefault(x=>x.Index == index);
-            if (account == default(HdAccount)) return false;
+            if (account == default(Bip44Account)) return false;
             this.Accounts.TryRemove(account);
-            return this.Accounts.Add(new HdAccount(account.ExtPubKey, account.Path, newLabel));
+            return this.Accounts.Add(new Bip44Account(account.ExtPubKey, account.Bip44KeyPath, this.CoinType, newLabel));
         }
 
         /// <summary>
