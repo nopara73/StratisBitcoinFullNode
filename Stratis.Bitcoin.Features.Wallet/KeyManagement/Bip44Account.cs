@@ -74,14 +74,14 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         private Bip44PubKey[] internalPubKeys = null;
         private Bip44PubKey[] externalPubKeys = null;
 
-        private object internalPubKeysLock = new object();
-        private object externalPubKeysLock = new object();
+        private object InternalPubKeysLock { get; } = new object();
+        private object ExternalPubKeysLock { get; } = new object();
 
         public IEnumerable<Bip44PubKey> GetPubKeys(bool isInternal, Order order)
         {
             if(isInternal)
             {
-                lock(this.internalPubKeysLock)
+                lock(this.InternalPubKeysLock)
                 {
                     if (this.internalPubKeys == null) yield break;
                     if (order == Order.Ascending)
@@ -102,7 +102,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
             else
             {
-                lock (this.externalPubKeysLock)
+                lock (this.ExternalPubKeysLock)
                 {
                     if (this.externalPubKeys == null) yield break;
                     if (order == Order.Ascending)
@@ -129,7 +129,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
             if (isInternal)
             {
-                lock (this.internalPubKeysLock)
+                lock (this.InternalPubKeysLock)
                 {
                     int firstIndex;
                     if (this.internalPubKeys == null)
@@ -154,7 +154,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
             else
             {
-                lock (this.externalPubKeysLock)
+                lock (this.ExternalPubKeysLock)
                 {
                     int firstIndex;
                     if (this.externalPubKeys == null)

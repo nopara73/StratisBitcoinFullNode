@@ -1,289 +1,212 @@
 ﻿using NBitcoin;
+using Stratis.Bitcoin.Utilities.Extensions;
 using System;
 using System.Collections.Generic;
-using System.Text;
-using ConcurrentCollections;
 using System.Linq;
-using System.Threading.Tasks;
+using System.Text;
 using System.Threading;
-using System.Security;
-using Stratis.Bitcoin.Utilities.Extensions;
+using System.Threading.Tasks;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
-    /// <summary>
-	/// BIP43, BIP44, BIP49 implementation
-	/// </summary>
-    public class KeyManager
+    public class Bip44KeyManager
     {
-        // m / purpose' / coin_type' / account' / change / address_index
-        public KeyPath PurposePath
+        public Network Network { get; }
+
+        private KeyPath bip44CoinTypePath = null;
+        public KeyPath Bip44CoinTypePath
         {
             get
             {
-                return new KeyPath("m/44'");
-            }
-        }
-        public Network CoinType { get; }
-        public KeyPath CoinTypePath
-        {
-            get
-            {
-                // SLIP-0044 : Registered coin types for BIP-0044
-                // https://github.com/satoshilabs/slips/blob/master/slip-0044.md
-                if (this.CoinType == Network.Main) return this.PurposePath.Derive(0, true); // Bitcoin
-                if (this.CoinType == Network.Main) return this.PurposePath.Derive(105, true); // Stratis
-                else return this.PurposePath.Derive(1, true); ; // Testnet (all coins)
+                if (this.bip44CoinTypePath == null)
+                {
+                    // SLIP-0044 : Registered coin types for BIP-0044
+                    // https://github.com/satoshilabs/slips/blob/master/slip-0044.md
+                    if (this.Network == Network.Main) this.bip44CoinTypePath = new KeyPath("44'/0'"); // Bitcoin
+                    if (this.Network == Network.StratisMain) this.bip44CoinTypePath = new KeyPath("44'/105'"); // Stratis
+                    else this.bip44CoinTypePath = new KeyPath("44'/1'"); // Testnet (all coins)
+                }
+                return this.bip44CoinTypePath;
             }
         }
 
-        public int CreationHeight { get; set; }
-
-        public ConcurrentHashSet<Bip44Account> Accounts { get; }
+        public DateTimeOffset CreationTime { get; set; }
 
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
         public byte[] ChainCode { get; private set; }
-        private SemaphoreSlim InitializeSemaphore { get; }
 
-        public bool IsDecrypted
+        private Bip44Account[] accounts = null;
+        private SemaphoreSlim AccountsSemaphore { get; } = new SemaphoreSlim(1, 1);
+
+        public Bip44KeyManager(Network network, DateTimeOffset creationTime)
+        {
+            this.Network = network ?? throw new ArgumentNullException(nameof(network));
+            this.CreationTime = creationTime;
+        }
+
+        #region Initialization
+
+        public bool IsSeedInitialized
         {
             get
             {
-                return this.EncryptedSecret != null;
+                return this.EncryptedSecret != null && this.ChainCode != null;
             }
         }
 
-        public bool IsWatchOnly
+        public bool IsAccountsInitialized
         {
             get
             {
-                return !this.IsDecrypted && this.Accounts != null && this.Accounts.Count() != 0;
+                return this.accounts != null;
             }
         }
 
-        public KeyManager(Network network, int creationHeight = 0)
+        private SemaphoreSlim InitializeSemaphore { get; } = new SemaphoreSlim(1, 1);
+
+        public void InitializeAccounts(params Bip44Account[] accounts)
         {
-            this.CoinType = network ?? throw new ArgumentNullException(nameof(network));
-            if (creationHeight < 0) throw new ArgumentException(nameof(creationHeight));
-            this.CreationHeight = creationHeight;
-            this.Accounts = new ConcurrentHashSet<Bip44Account>();
-            this.EncryptedSecret = null;
-            this.ChainCode = null;
-            this.InitializeSemaphore = new SemaphoreSlim(1, 1);
-        }
-        
-        #region States
+            this.AccountsSemaphore.Wait();
+            this.InitializeSemaphore.Wait();
+            try
+            {
+                if (accounts == null) throw new ArgumentNullException(nameof(accounts));
+                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
 
-        public bool TryUpdateState (PubKey pubKey, Bip44KeyState state)
+                for (var i = 0; i < accounts.Length; i++)
+                {
+                    if (i != accounts[i].Index) throw new ArgumentException("Wrong account indexing");
+                }
+
+                this.accounts = accounts;
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+                this.InitializeSemaphore.SafeRelease();
+            }
+        }
+
+        public void InitializeFrom(BitcoinEncryptedSecretNoEC encrypetedSecret, byte[] chainCode)
         {
-            foreach(var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
+            this.InitializeSemaphore.Wait();
+            try
             {
-                if(key.PubKey == pubKey)
-                {
-                    key.State = state;
-                    return true;
-                }
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                this.EncryptedSecret = encrypetedSecret ?? throw new ArgumentNullException(nameof(encrypetedSecret));
+                this.ChainCode = chainCode ?? throw new ArgumentNullException(nameof(chainCode));
             }
-            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
+            finally
             {
-                if (key.PubKey == pubKey)
-                {
-                    key.State = state;
-                    return true;
-                }
+                this.InitializeSemaphore.SafeRelease();
             }
-            return false;
         }
 
-        public bool TryUpdateState(BitcoinAddress address, Bip44KeyState state)
+        public async Task InitializeFromAsync(ExtKey extKey, string walletPassword, CancellationToken cancel)
         {
-            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
+            await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+            try
             {
-                if (key.P2pkhAddress == address || key.P2wpkhAddress == address || key.P2shOverP2wpkhAddress == address)
+                if (extKey == null) throw new ArgumentNullException(nameof(extKey));
+                if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                if (this.IsAccountsInitialized)
                 {
-                    key.State = state;
-                    return true;
+                    await this.AccountsSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+                    try
+                    {
+                        foreach (var account in this.accounts)
+                        {
+                            if (extKey.Derive(account.Bip44KeyPath).Neuter() != account.ExtPubKey)
+                            {
+                                throw new InvalidOperationException($"Already initialized account does not match the provided {extKey}");
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        this.AccountsSemaphore.SafeRelease();
+                    }
+
+                    this.ChainCode = extKey.ChainCode;
+                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.Network);
                 }
+
             }
-            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
+            finally
             {
-                if (key.P2pkhAddress == address || key.P2wpkhAddress == address || key.P2shOverP2wpkhAddress == address)
-                {
-                    key.State = state;
-                    return true;
-                }
+                this.InitializeSemaphore.SafeRelease();
             }
-            return false;
         }
 
-        public bool TryUpdateState(Script script, Bip44KeyState state)
+        public async Task InitializeFromAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
         {
-            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(true, Order.Descending)))
+            await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+            try
             {
-                if (key.P2pkScript == script || key.P2pkhScript == script || key.P2wpkhScript == script || key.P2shOverP2wpkhScript == script)
+                if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
+                if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
+                if (mnemonic == null) throw new ArgumentNullException(nameof(mnemonic));
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
+
+                if (this.IsAccountsInitialized)
                 {
-                    key.State = state;
-                    return true;
+                    await this.AccountsSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+                    try
+                    {
+                        foreach (var account in this.accounts)
+                        {
+                            if (extKey.Derive(account.Bip44KeyPath).Neuter() != account.ExtPubKey)
+                            {
+                                throw new InvalidOperationException($"Already initialized account does not match the provided {extKey}");
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        this.AccountsSemaphore.SafeRelease();
+                    }
+                    
+                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.Network);
+                    this.ChainCode = extKey.ChainCode;
                 }
+
             }
-            foreach (var key in this.Accounts.SelectMany(x => x.GetPubKeys(false, Order.Descending)))
+            finally
             {
-                if (key.P2pkScript == script || key.P2pkhScript == script || key.P2wpkhScript == script || key.P2shOverP2wpkhScript == script)
-                {
-                    key.State = state;
-                    return true;
-                }
+                this.InitializeSemaphore.SafeRelease();
             }
-            return false;
         }
-
-        #endregion
-
-        #region Initalization
 
         public async Task<Mnemonic> InitializeNewAsync(string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
         {
-            return await Task.Run(async () =>
+            await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+            try
             {
-                await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
-                try
-                {
-                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
-                    
-                    if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
-                    if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
+                if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
+                if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
+                if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
+                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
 
-                    var mnemonic = new Mnemonic(wordlist, wordCount);
+                var mnemonic = new Mnemonic(wordlist, wordCount);
+                ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
 
-                    ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
+                this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.Network);
+                this.ChainCode = extKey.ChainCode;
 
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
-                    this.ChainCode = extKey.ChainCode;
-
-                    return mnemonic;
-                }
-                finally
-                {
-                    this.InitializeSemaphore.SafeRelease();
-                }
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public async Task InitializeFromMnemonicAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
-        {
-            await Task.Run(async () =>
+                return mnemonic;
+            }
+            finally
             {
-                await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
-                try
-                {
-                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
-                    
-                    if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
-                    if (mnemonic == null) throw new ArgumentNullException(nameof(mnemonic));
-
-                    ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
-
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
-                    this.ChainCode = extKey.ChainCode;
-                }
-                finally
-                {
-                    this.InitializeSemaphore.SafeRelease();
-                }
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public async Task InitializeFromExtKey(string walletPassword, ExtKey extKey, CancellationToken cancel)
-        {
-            await Task.Run(async () =>
-            {
-                await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
-                try
-                {
-                    if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
-                    
-                    if (extKey == null) throw new ArgumentNullException(nameof(extKey));
-
-                    this.EncryptedSecret = extKey.PrivateKey.GetEncryptedBitcoinSecret(walletPassword, this.CoinType);
-                    this.ChainCode = extKey.ChainCode;
-                }
-                finally
-                {
-                    this.InitializeSemaphore.SafeRelease();
-                }
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public void InitializeWatchOnly(IEnumerable<Bip44Account> accounts, IEnumerable<Bip44PubKey> keys)
-        {
-            if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
-            if(this.IsWatchOnly) if (this.IsDecrypted) throw new InvalidOperationException($"{nameof(KeyManager)} is already initialized");
-            foreach (var account in accounts)
-            {
-                this.Accounts.Add(account);
+                this.InitializeSemaphore.SafeRelease();
             }
         }
 
-        #endregion
-
-        #region Accounts
-
-        public bool ContainsAccount(int index)
-        {
-            return this.Accounts.Any(x => x.Index == index);
-        }
-
-        public bool ContainsAccount(string label)
-        {
-            return this.Accounts.Any(x => x.Label == label);
-        }
-
-        public async Task<bool> TryAddAccountAsync(string walletPassword, string label, CancellationToken cancel)
-        {
-            return await Task.Run(() =>
-            {
-                if (label == null) return false;
-
-                Key key = this.EncryptedSecret.GetKey(walletPassword);
-                var extKey = new ExtKey(key, this.ChainCode);
-
-                for (int i = 0; i <= this.Accounts.Count; i++)
-                {
-                    if (!ContainsAccount(i))
-                    {
-                        var keyPath = this.CoinTypePath.Derive(i, true);
-                        ExtPubKey accountExtPubKey = extKey.Derive(keyPath).Neuter();
-                        return this.Accounts.Add(new Bip44Account(accountExtPubKey, keyPath, this.CoinType, label));
-                    }
-                }
-                throw new NotSupportedException(); // This should never happen
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public bool TryChangeAccountLabel(int index, string newLabel)
-        { 
-            if (newLabel == null) return false;
-            var account = this.Accounts.SingleOrDefault(x=>x.Index == index);
-            if (account == default(Bip44Account)) return false;
-            this.Accounts.TryRemove(account);
-            return this.Accounts.Add(new Bip44Account(account.ExtPubKey, account.Bip44KeyPath, this.CoinType, newLabel));
-        }
-
-        /// <summary>
-        /// Labels are not unique, so all oldLabel match will be changed
-        /// </summary>
-        public bool TryChangeAccountLabels(string oldLabel, string newLabel)
-        {
-            if (oldLabel == null) return false;
-            if (newLabel == null) return false;
-            var accounts = this.Accounts.Where(x => x.Label == oldLabel).Select(x=>x).ToList();
-            if (accounts.Count() == 0) return false;
-            foreach(var account in accounts)
-            {
-                account.Label = newLabel;
-            }
-            return true;
-        }
 
         #endregion
     }
