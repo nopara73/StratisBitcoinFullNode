@@ -34,10 +34,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
         public byte[] ChainCode { get; private set; }
-
-        private Bip44Account[] accounts = null;
-        private SemaphoreSlim AccountsSemaphore { get; } = new SemaphoreSlim(1, 1);
-
+        
         public Bip44KeyManager(Network network, DateTimeOffset creationTime)
         {
             this.Network = network ?? throw new ArgumentNullException(nameof(network));
@@ -208,6 +205,160 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
 
-        #endregion        
+        #endregion
+
+        #region OperationsOnAccountsCollection
+        
+        private Bip44Account[] accounts = null;
+        private SemaphoreSlim AccountsSemaphore { get; } = new SemaphoreSlim(1, 1);
+
+        public async Task<Bip44Account> CreateAccountAsync(string walletPassword, string label, CancellationToken cancel)
+        {
+            if (label == null) throw new ArgumentNullException(nameof(label));
+            if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
+            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+            ExtKey extKey = new ExtKey(this.EncryptedSecret.GetKey(walletPassword), this.ChainCode);
+
+            await this.AccountsSemaphore.WaitAsync(cancel).ConfigureAwait(false);
+            try
+            {
+                int index;
+                if (this.accounts == null)
+                {
+                    this.accounts = new Bip44Account[1];
+                    index = 0;
+                }
+                else
+                {
+                    index = this.accounts.Length - 1;
+                    Array.Resize(ref this.accounts, this.accounts.Length + 1);
+                }
+
+                KeyPath keyPath = this.Bip44CoinTypePath.Derive(index, true);
+                ExtPubKey extPubKey = extKey.Derive(keyPath).Neuter();
+                this.accounts[index] = new Bip44Account(extPubKey, keyPath, this.Network, label);
+                return this.accounts[index];
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+            }            
+        }
+
+        public IEnumerable<Bip44Account> GetAccounts()
+        {
+            this.AccountsSemaphore.Wait();
+            try
+            {
+                if (this.accounts == null) yield break;
+                for (var i = 0; i < this.accounts.Length; i++)
+                {
+                    yield return this.accounts[i];
+                }
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+            }
+        }
+
+        public IEnumerable<Bip44Account> GetAccounts(string label)
+        {
+            if (label == null) throw new ArgumentNullException(nameof(label));
+            this.AccountsSemaphore.Wait();
+            try
+            {
+                if (this.accounts == null) yield break;
+                for (var i = 0; i < this.accounts.Length; i++)
+                {
+                    if (this.accounts[i].Label == label)
+                    {
+                        yield return this.accounts[i];
+                    }
+                }
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+            }
+        }
+
+        /// <returns>null if account hasn't been created</returns>
+        public Bip44Account TryGetAccount(int index)
+        {
+            if (index < 0) throw new ArgumentOutOfRangeException($"{nameof(index)} cannot be smaller than 0");
+            this.AccountsSemaphore.Wait();
+            try
+            {
+                if (this.accounts == null || index >= this.accounts.Length)
+                {
+                    return null;
+                }
+                return this.accounts[index];
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+            }
+        }
+
+        #endregion
+
+        #region LabelOperationsOnAccounts
+
+        public bool TryUpdateLabel(int index, string newLabel)
+        {
+            if (newLabel == null) throw new ArgumentNullException(nameof(newLabel));
+            if (index < 0) throw new ArgumentOutOfRangeException($"{nameof(index)} cannot be smaller than 0");
+            this.AccountsSemaphore.Wait();
+            try
+            {
+                if (this.accounts == null || index >= this.accounts.Length)
+                {
+                    return false;
+                }
+
+                string oldLabel = this.accounts[index].Label;
+                if (oldLabel == newLabel) return false;
+                this.accounts[index].Label = newLabel;
+                return true;
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();
+            }
+        }
+
+        public bool TryUpdateLabels(string oldLabel, string newLabel)
+        {
+            if (newLabel == null) throw new ArgumentNullException(nameof(newLabel));
+            if (oldLabel == null) throw new ArgumentNullException(nameof(oldLabel));
+            if (oldLabel == newLabel) return false;
+            var modifiedAtLeastOne = false;
+
+            this.AccountsSemaphore.Wait();
+            try
+            {
+                if (this.accounts != null)
+                {
+                    foreach (Bip44Account account in this.accounts)
+                    {
+                        if (account.Label == oldLabel)
+                        {
+                            account.Label = newLabel;
+                            modifiedAtLeastOne = true;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                this.AccountsSemaphore.SafeRelease();      
+            }
+
+            return modifiedAtLeastOne;
+        }
+
+        #endregion
     }
 }

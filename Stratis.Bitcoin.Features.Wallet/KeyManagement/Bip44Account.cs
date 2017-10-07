@@ -555,6 +555,44 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 }
             return false;
         }
+        public bool TryUpdateLabels(string oldLabel, string newLabel)
+        {
+            if (newLabel == null) throw new ArgumentNullException(nameof(newLabel));
+            if (oldLabel == null) throw new ArgumentNullException(nameof(oldLabel));
+            if (oldLabel == newLabel) return false;
+            var modifiedAtLeastOne = false;
+
+            lock (this.InternalPubKeysLock)
+            {
+                if(this.internalPubKeys != null)
+                {
+                    foreach(Bip44PubKey pubKey in this.internalPubKeys)
+                    {
+                        if(pubKey.Label == oldLabel)
+                        {
+                            pubKey.Label = newLabel;
+                            modifiedAtLeastOne = true;
+                        }
+                    }
+                }
+            }
+            lock (this.ExternalPubKeysLock)
+            {
+                if (this.externalPubKeys != null)
+                {
+                    foreach (Bip44PubKey pubKey in this.externalPubKeys)
+                    {
+                        if (pubKey.Label == oldLabel)
+                        {
+                            pubKey.Label = newLabel;
+                            modifiedAtLeastOne = true;
+                        }
+                    }
+                }
+            }
+
+            return modifiedAtLeastOne;
+        }
 
         #endregion
 
