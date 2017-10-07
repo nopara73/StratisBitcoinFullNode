@@ -208,6 +208,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
 
-        #endregion
+        #endregion        
     }
 }
