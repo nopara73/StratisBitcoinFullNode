@@ -1,7 +1,9 @@
 ﻿using NBitcoin;
+using Newtonsoft.Json;
 using Stratis.Bitcoin.Utilities.Extensions;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -11,7 +13,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
     public class Bip44KeyManager
     {
-        public Network Network { get; }
+        public Network Network { get; private set; }
 
         private KeyPath bip44CoinTypePath = null;
         public KeyPath Bip44CoinTypePath
@@ -34,12 +36,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
         public byte[] ChainCode { get; private set; }
-        
-        public Bip44KeyManager(Network network, DateTimeOffset creationTime)
-        {
-            this.Network = network ?? throw new ArgumentNullException(nameof(network));
-            this.CreationTime = creationTime;
-        }
 
         #region Initialization
 
@@ -61,12 +57,13 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         private SemaphoreSlim InitializeSemaphore { get; } = new SemaphoreSlim(1, 1);
 
-        public void InitializeAccounts(params Bip44Account[] accounts)
+        public void InitializeAccounts(Network network, DateTimeOffset creationTime, params Bip44Account[] accounts)
         {
             this.AccountsSemaphore.Wait();
             this.InitializeSemaphore.Wait();
             try
             {
+                this.Network = network ?? throw new ArgumentNullException(nameof(network));
                 if (accounts == null) throw new ArgumentNullException(nameof(accounts));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
 
@@ -74,6 +71,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 {
                     if (i != accounts[i].Index) throw new ArgumentException("Wrong account indexing");
                 }
+                this.CreationTime = creationTime;
 
                 this.accounts = accounts;
             }
@@ -84,7 +82,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public void InitializeFrom(BitcoinEncryptedSecretNoEC encrypetedSecret, byte[] chainCode)
+        public void InitializeSeedFromEncryptedSecret(BitcoinEncryptedSecretNoEC encrypetedSecret, byte[] chainCode)
         {
             this.InitializeSemaphore.Wait();
             try
@@ -100,7 +98,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task InitializeFromAsync(ExtKey extKey, string walletPassword, CancellationToken cancel)
+        public async Task InitializeSeedFromExtKeyAsync(ExtKey extKey, string walletPassword, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
@@ -138,7 +136,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task InitializeFromAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
+        public async Task InitializeSeedFromMnemonicAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
@@ -179,16 +177,50 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task<Mnemonic> InitializeNewAsync(string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
+        public async Task InitializeFullyFromJsonAsync(string jsonString, CancellationToken cancel)
+        {
+            await Task.Run(() =>
+            {
+                if (jsonString == null) throw new ArgumentNullException(nameof(jsonString));
+                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
+                InitializeAccounts(keyManager.Network, keyManager.CreationTime, keyManager.accounts);
+                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
+            }, cancel).ConfigureAwait(false);
+        }
+
+        public async Task InitializeFullyFromEncyptedJsonAsync(string encryptedJsonString, string encryptionPassword, CancellationToken cancel)
+        {
+            string jsonString = StringCipher.Decrypt(encryptedJsonString, encryptionPassword);
+            await InitializeFullyFromJsonAsync(jsonString, cancel).ConfigureAwait(false);
+        }
+        
+        public async Task InitializeFullyFromFileAsync(string filePath, CancellationToken cancel)
+        {
+            string jsonString = File.ReadAllText(filePath, Encoding.UTF8);
+            await InitializeFullyFromJsonAsync(jsonString, cancel).ConfigureAwait(false);
+        }
+
+        public async Task InitializeFullyFromEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
+        {
+            string encyptedJsonString = File.ReadAllText(filePath, Encoding.UTF8);
+            await InitializeFullyFromEncyptedJsonAsync(encyptedJsonString, encryptionPassword, cancel).ConfigureAwait(false);
+        }
+
+        public async Task<Mnemonic> InitializeNewAsync(Network network, DateTimeOffset creationTime, string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
             {
+                this.Network = network ?? throw new ArgumentNullException(nameof(network));
                 if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
                 if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                 if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+                this.CreationTime = creationTime;
 
                 var mnemonic = new Mnemonic(wordlist, wordCount);
                 ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
@@ -203,8 +235,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 this.InitializeSemaphore.SafeRelease();
             }
         }
-
-
+        
         #endregion
 
         #region OperationsOnAccountsCollection
@@ -357,6 +388,38 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
 
             return modifiedAtLeastOne;
+        }
+
+        #endregion
+
+        #region Serialization
+
+        public async Task<string> ToJsonStringAsync(CancellationToken cancel)
+        {
+            return await Task.Run(() => 
+            {
+                return JsonConvert.SerializeObject(this);
+            }, cancel).ConfigureAwait(false);
+        }
+
+        public async Task<string> ToEncyptedJsonAsync(string encryptionPassword, CancellationToken cancel)
+        {
+            string jsonString = await ToJsonStringAsync(cancel).ConfigureAwait(false);
+            return StringCipher.Encrypt(jsonString, encryptionPassword);
+        }
+
+        public async Task ToFileAsync(string filePath, CancellationToken cancel)
+        {
+            File.WriteAllText(filePath,
+                await ToJsonStringAsync(cancel).ConfigureAwait(false),
+                Encoding.UTF8);
+        }
+
+        public async Task ToEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
+        {
+            File.WriteAllText(filePath,
+                await ToEncyptedJsonAsync(encryptionPassword, cancel).ConfigureAwait(false),
+                Encoding.UTF8);
         }
 
         #endregion
