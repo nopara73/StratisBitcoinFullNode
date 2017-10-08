@@ -13,27 +13,28 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
     public class Bip44KeyManager
     {
-        public Network Network { get; private set; }
-
-        private KeyPath bip44CoinTypePath = null;
-        public KeyPath Bip44CoinTypePath
-        {
-            get
-            {
-                if (this.bip44CoinTypePath == null)
-                {
-                    // SLIP-0044 : Registered coin types for BIP-0044
-                    // https://github.com/satoshilabs/slips/blob/master/slip-0044.md
-                    if (this.Network == Network.Main) this.bip44CoinTypePath = new KeyPath("44'/0'"); // Bitcoin
-                    if (this.Network == Network.StratisMain) this.bip44CoinTypePath = new KeyPath("44'/105'"); // Stratis
-                    else this.bip44CoinTypePath = new KeyPath("44'/1'"); // Testnet (all coins)
-                }
-                return this.bip44CoinTypePath;
-            }
-        }
-
+        public Network Network { get; }
         public DateTimeOffset CreationTime { get; set; }
 
+        public Bip44KeyManager(Network network)
+        {
+            this.Network = network ?? throw new ArgumentNullException(nameof(network));
+        }
+
+        private KeyPath bip44CoinTypePath = null;
+        public KeyPath GetBip44CoinTypePath()
+        {
+            if (this.bip44CoinTypePath == null)
+            {
+                // SLIP-0044 : Registered coin types for BIP-0044
+                // https://github.com/satoshilabs/slips/blob/master/slip-0044.md
+                if (this.Network == Network.Main) this.bip44CoinTypePath = new KeyPath("44'/0'"); // Bitcoin
+                else if (this.Network == Network.StratisMain) this.bip44CoinTypePath = new KeyPath("44'/105'"); // Stratis
+                else this.bip44CoinTypePath = new KeyPath("44'/1'"); // Testnet (all coins)
+            }
+            return this.bip44CoinTypePath;
+        }
+        
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
         public byte[] ChainCode { get; private set; }
 
@@ -57,21 +58,19 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         private SemaphoreSlim InitializeSemaphore { get; } = new SemaphoreSlim(1, 1);
 
-        public void InitializeAccounts(Network network, DateTimeOffset creationTime, params Bip44Account[] accounts)
+        public void InitializeAccounts(params Bip44Account[] accounts)
         {
             this.AccountsSemaphore.Wait();
             this.InitializeSemaphore.Wait();
             try
             {
-                this.Network = network ?? throw new ArgumentNullException(nameof(network));
                 if (accounts == null) throw new ArgumentNullException(nameof(accounts));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
 
                 for (var i = 0; i < accounts.Length; i++)
                 {
-                    if (i != accounts[i].Index) throw new ArgumentException("Wrong account indexing");
+                    if (i != accounts[i].GetIndex()) throw new ArgumentException("Wrong account indexing");
                 }
-                this.CreationTime = creationTime;
 
                 this.accounts = accounts;
             }
@@ -177,51 +176,17 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task InitializeFullyFromJsonAsync(string jsonString, CancellationToken cancel)
-        {
-            await Task.Run(() =>
-            {
-                if (jsonString == null) throw new ArgumentNullException(nameof(jsonString));
-                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
-                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
-
-                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
-                InitializeAccounts(keyManager.Network, keyManager.CreationTime, keyManager.accounts);
-                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public async Task InitializeFullyFromEncyptedJsonAsync(string encryptedJsonString, string encryptionPassword, CancellationToken cancel)
-        {
-            string jsonString = StringCipher.Decrypt(encryptedJsonString, encryptionPassword);
-            await InitializeFullyFromJsonAsync(jsonString, cancel).ConfigureAwait(false);
-        }
-        
-        public async Task InitializeFullyFromFileAsync(string filePath, CancellationToken cancel)
-        {
-            string jsonString = File.ReadAllText(filePath, Encoding.UTF8);
-            await InitializeFullyFromJsonAsync(jsonString, cancel).ConfigureAwait(false);
-        }
-
-        public async Task InitializeFullyFromEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
-        {
-            string encyptedJsonString = File.ReadAllText(filePath, Encoding.UTF8);
-            await InitializeFullyFromEncyptedJsonAsync(encyptedJsonString, encryptionPassword, cancel).ConfigureAwait(false);
-        }
-
-        public async Task<Mnemonic> InitializeNewAsync(Network network, DateTimeOffset creationTime, string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
+        public async Task<Mnemonic> InitializeNewAsync(string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
             {
-                this.Network = network ?? throw new ArgumentNullException(nameof(network));
                 if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
                 if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                 if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
-                this.CreationTime = creationTime;
-
+                
                 var mnemonic = new Mnemonic(wordlist, wordCount);
                 ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
 
@@ -247,7 +212,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         {
             if (label == null) throw new ArgumentNullException(nameof(label));
             if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
-            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+            if (!this.IsSeedInitialized) throw new InvalidOperationException("Seed is not yet initialized");
             ExtKey extKey = new ExtKey(this.EncryptedSecret.GetKey(walletPassword), this.ChainCode);
 
             await this.AccountsSemaphore.WaitAsync(cancel).ConfigureAwait(false);
@@ -265,7 +230,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     Array.Resize(ref this.accounts, this.accounts.Length + 1);
                 }
 
-                KeyPath keyPath = this.Bip44CoinTypePath.Derive(index, true);
+                KeyPath keyPath = this.GetBip44CoinTypePath().Derive(index, true);
                 ExtPubKey extPubKey = extKey.Derive(keyPath).Neuter();
                 this.accounts[index] = new Bip44Account(extPubKey, keyPath, this.Network, label);
                 return this.accounts[index];
@@ -394,32 +359,67 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         #region Serialization
 
-        public async Task<string> ToJsonStringAsync(CancellationToken cancel)
-        {
-            return await Task.Run(() => 
-            {
-                return JsonConvert.SerializeObject(this);
-            }, cancel).ConfigureAwait(false);
-        }
-
-        public async Task<string> ToEncyptedJsonAsync(string encryptionPassword, CancellationToken cancel)
-        {
-            string jsonString = await ToJsonStringAsync(cancel).ConfigureAwait(false);
-            return StringCipher.Encrypt(jsonString, encryptionPassword);
-        }
-
         public async Task ToFileAsync(string filePath, CancellationToken cancel)
         {
-            File.WriteAllText(filePath,
-                await ToJsonStringAsync(cancel).ConfigureAwait(false),
+            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+
+            await Task.Run(() =>
+            {
+                var settings = new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                };
+
+                string jsonString = JsonConvert.SerializeObject(this, settings);
+                File.WriteAllText(filePath,
+                jsonString,
                 Encoding.UTF8);
+            }, cancel).ConfigureAwait(false);
         }
 
         public async Task ToEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
         {
-            File.WriteAllText(filePath,
-                await ToEncyptedJsonAsync(encryptionPassword, cancel).ConfigureAwait(false),
+            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+            if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
+
+            await Task.Run(() =>
+            {
+                File.WriteAllText(filePath,
+                StringCipher.Encrypt(JsonConvert.SerializeObject(this), encryptionPassword),
                 Encoding.UTF8);
+            }, cancel).ConfigureAwait(false);
+        }
+
+        public async Task InitializeFullyFromFileAsync(string filePath, CancellationToken cancel)
+        {
+            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+            if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+            await Task.Run(() =>
+            {
+                string jsonString = File.ReadAllText(filePath, Encoding.UTF8);
+                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
+                InitializeAccounts(keyManager.accounts);
+                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
+            }, cancel).ConfigureAwait(false);
+        }
+
+        public async Task InitializeFullyFromEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
+        {
+            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+            if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
+            if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+            await Task.Run(() =>
+            {
+                string encryptedJsonString = File.ReadAllText(filePath, Encoding.UTF8);
+                string jsonString = StringCipher.Decrypt(encryptedJsonString, encryptionPassword);
+                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
+                InitializeAccounts(keyManager.accounts);
+                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
+            }, cancel).ConfigureAwait(false);
         }
 
         #endregion

@@ -3,11 +3,41 @@ using System.Collections.Generic;
 using System.Text;
 using Stratis.Bitcoin.Features.Wallet;
 using Xunit;
+using Stratis.Bitcoin.Features.Wallet.KeyManagement;
+using NBitcoin;
+using System.Threading;
+using System.Diagnostics;
+using System.Linq;
 
 namespace Stratis.Bitcoin.Features.Wallet.Tests
 {
     public class AccountRootTest : WalletTestBase
     {
+        [Fact]
+        public void Foo()
+        {
+            Bip44KeyManager km = new Bip44KeyManager(Network.Main);
+            var pw = "";
+            km.InitializeNewAsync( pw, pw, Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
+
+            km.CreateAccountAsync(pw, "", CancellationToken.None).GetAwaiter().GetResult();
+            var account = km.TryGetAccount(0);
+            account.CreatePubKeys(false, "", 20);
+            var pubKeys = account.GetPubKeys();
+            foreach (var pk in pubKeys)
+            {
+                Debug.WriteLine(pk.GetP2wpkhAddress());
+            }
+            km.ToFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
+
+            var km2 = new Bip44KeyManager(Network.Main);
+            km2.InitializeFullyFromFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
+            foreach(var pk in km2.TryGetAccount(0).GetPubKeys())
+            {
+                Debug.WriteLine(pk.GetP2wpkhAddress());
+            }
+
+        }
         [Fact]
         public void GetFirstUnusedAccountWithoutAccountsReturnsNull()
         {

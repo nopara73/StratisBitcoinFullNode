@@ -25,48 +25,33 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
         private ExtPubKey internalChainExtPubKey = null;
-        public ExtPubKey InternalChainExtPubKey
+        public ExtPubKey GetInternalChainExtPubKey()
         {
-            get
-            {
-                return this.internalChainExtPubKey ?? (this.internalChainExtPubKey = this.ExtPubKey.Derive(1, false));
-            }
+            return this.internalChainExtPubKey ?? (this.internalChainExtPubKey = this.ExtPubKey.Derive(1, false));
         }
 
         private ExtPubKey externalChainExtPubKey = null;
-        public ExtPubKey ExternalChainExtPubKey
+        public ExtPubKey GetExternalChainExtPubKey()
         {
-            get
-            {
-                return this.externalChainExtPubKey ?? (this.externalChainExtPubKey = this.ExtPubKey.Derive(0, false));
-            }
+            return this.externalChainExtPubKey ?? (this.externalChainExtPubKey = this.ExtPubKey.Derive(0, false));
         }
 
         private KeyPath internalChainKeyPath = null;
-        public KeyPath InternalChainKeyPath
+        public KeyPath GetInternalChainKeyPath()
         {
-            get
-            {
-                return this.internalChainKeyPath ?? (this.internalChainKeyPath = this.Bip44KeyPath.Derive(1, false));
-            }
+            return this.internalChainKeyPath ?? (this.internalChainKeyPath = this.Bip44KeyPath.Derive(1, false));
         }
 
         private KeyPath externalChainKeyPath = null;
-        public KeyPath ExternalChainKeyPath
+        public KeyPath GetExternalChainKeyPath()
         {
-            get
-            {
-                return this.externalChainKeyPath ?? (this.externalChainKeyPath = this.Bip44KeyPath.Derive(0, false));
-            }
+            return this.externalChainKeyPath ?? (this.externalChainKeyPath = this.Bip44KeyPath.Derive(0, false));
         }
 
         private int? index = null;
-        public int Index
+        public int GetIndex()
         {
-            get
-            {
-                return (int)(this.index ?? (this.index = (int)(this.Bip44KeyPath.Indexes[2] - 2147483648)));
-            }
+            return (int)(this.index ?? (this.index = (int)(this.Bip44KeyPath.Indexes[2] - 2147483648)));
         }
 
         #region OperationsOnPubKeyCollections
@@ -96,11 +81,11 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         firstIndex = this.internalPubKeys.Length - 1;
                         Array.Resize(ref this.internalPubKeys, this.internalPubKeys.Length + count);
                     }
-
+                    
                     for(var i = firstIndex; i < firstIndex + count; i++)
                     {
                         KeyPath keyPath = this.internalChainKeyPath.Derive(i, false);
-                        PubKey pubKey = this.InternalChainExtPubKey.Derive(i, false).PubKey;
+                        PubKey pubKey = GetInternalChainExtPubKey().Derive(i, false).PubKey;
                         this.internalPubKeys[i] = new Bip44PubKey(pubKey, keyPath, this.Network, label, Bip44KeyState.Clean);
                         yield return this.internalPubKeys[i];
                     }
@@ -124,8 +109,8 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
                     for (var i = firstIndex; i < firstIndex + count; i++)
                     {
-                        KeyPath keyPath = this.ExternalChainKeyPath.Derive(i, false);
-                        PubKey pubKey = this.ExternalChainExtPubKey.Derive(i, false).PubKey;
+                        KeyPath keyPath = GetExternalChainKeyPath().Derive(i, false);
+                        PubKey pubKey = GetExternalChainExtPubKey().Derive(i, false).PubKey;
                         this.externalPubKeys[i] = new Bip44PubKey(pubKey, keyPath, this.Network, label, Bip44KeyState.Clean);
                         yield return this.externalPubKeys[i];
                     }
@@ -274,7 +259,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].PubKeyHash == pubKeyHash)
+                            if (this.internalPubKeys[i].GetPubKeyHash() == pubKeyHash)
                             {
                                 Bip44KeyState oldState = this.internalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -284,7 +269,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].PubKeyHash == pubKeyHash)
+                            if (this.externalPubKeys[i].GetPubKeyHash() == pubKeyHash)
                             {
                                 Bip44KeyState oldState = this.externalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -313,9 +298,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].P2pkhAddress == address
-                                || this.internalPubKeys[i].P2wpkhAddress == address
-                                || this.internalPubKeys[i].P2shOverP2wpkhAddress == address)
+                            if (this.internalPubKeys[i].GetP2pkhAddress() == address
+                                || this.internalPubKeys[i].GetP2wpkhAddress() == address
+                                || this.internalPubKeys[i].GetP2shOverP2wpkhAddress() == address)
                             {
                                 Bip44KeyState oldState = this.internalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -325,9 +310,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].P2pkhAddress == address
-                                || this.externalPubKeys[i].P2wpkhAddress == address
-                                || this.externalPubKeys[i].P2shOverP2wpkhAddress == address)
+                            if (this.externalPubKeys[i].GetP2pkhAddress() == address
+                                || this.externalPubKeys[i].GetP2wpkhAddress() == address
+                                || this.externalPubKeys[i].GetP2shOverP2wpkhAddress() == address)
                             {
                                 Bip44KeyState oldState = this.externalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -356,10 +341,10 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].P2pkScript == script
-                                || this.internalPubKeys[i].P2pkhScript == script
-                                || this.internalPubKeys[i].P2wpkhScript == script
-                                || this.internalPubKeys[i].P2shOverP2wpkhScript == script)
+                            if (this.internalPubKeys[i].GetP2pkScript() == script
+                                || this.internalPubKeys[i].GetP2pkhScript() == script
+                                || this.internalPubKeys[i].GetP2wpkhScript() == script
+                                || this.internalPubKeys[i].GetP2shOverP2wpkhScript() == script)
                             {
                                 Bip44KeyState oldState = this.internalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -369,10 +354,10 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].P2pkScript == script
-                                || this.externalPubKeys[i].P2pkhScript == script
-                                || this.externalPubKeys[i].P2wpkhScript == script
-                                || this.externalPubKeys[i].P2shOverP2wpkhScript == script)
+                            if (this.externalPubKeys[i].GetP2pkScript() == script
+                                || this.externalPubKeys[i].GetP2pkhScript() == script
+                                || this.externalPubKeys[i].GetP2wpkhScript() == script
+                                || this.externalPubKeys[i].GetP2shOverP2wpkhScript() == script)
                             {
                                 Bip44KeyState oldState = this.externalPubKeys[i].State;
                                 if (oldState == newState) return false;
@@ -443,7 +428,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].PubKeyHash == pubKeyHash)
+                            if (this.internalPubKeys[i].GetPubKeyHash() == pubKeyHash)
                             {
                                 string oldLabel = this.internalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -453,7 +438,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].PubKeyHash == pubKeyHash)
+                            if (this.externalPubKeys[i].GetPubKeyHash() == pubKeyHash)
                             {
                                 string oldLabel = this.externalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -483,9 +468,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].P2pkhAddress == address
-                                || this.internalPubKeys[i].P2wpkhAddress == address
-                                || this.internalPubKeys[i].P2shOverP2wpkhAddress == address)
+                            if (this.internalPubKeys[i].GetP2pkhAddress() == address
+                                || this.internalPubKeys[i].GetP2wpkhAddress() == address
+                                || this.internalPubKeys[i].GetP2shOverP2wpkhAddress() == address)
                             {
                                 string oldLabel = this.internalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -495,9 +480,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].P2pkhAddress == address
-                                || this.externalPubKeys[i].P2wpkhAddress == address
-                                || this.externalPubKeys[i].P2shOverP2wpkhAddress == address)
+                            if (this.externalPubKeys[i].GetP2pkhAddress() == address
+                                || this.externalPubKeys[i].GetP2wpkhAddress() == address
+                                || this.externalPubKeys[i].GetP2shOverP2wpkhAddress() == address)
                             {
                                 string oldLabel = this.externalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -527,10 +512,10 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     {
                         if (this.internalPubKeys != null && this.internalPubKeys.Length > i)
                         {
-                            if (this.internalPubKeys[i].P2pkScript == script
-                                || this.internalPubKeys[i].P2pkhScript == script
-                                || this.internalPubKeys[i].P2wpkhScript == script
-                                || this.internalPubKeys[i].P2shOverP2wpkhScript == script)
+                            if (this.internalPubKeys[i].GetP2pkScript() == script
+                                || this.internalPubKeys[i].GetP2pkhScript() == script
+                                || this.internalPubKeys[i].GetP2wpkhScript() == script
+                                || this.internalPubKeys[i].GetP2shOverP2wpkhScript() == script)
                             {
                                 string oldLabel = this.internalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -540,10 +525,10 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         }
                         if (this.externalPubKeys != null && this.externalPubKeys.Length > i)
                         {
-                            if (this.externalPubKeys[i].P2pkScript == script
-                                || this.externalPubKeys[i].P2pkhScript == script
-                                || this.externalPubKeys[i].P2wpkhScript == script
-                                || this.externalPubKeys[i].P2shOverP2wpkhScript == script)
+                            if (this.externalPubKeys[i].GetP2pkScript() == script
+                                || this.externalPubKeys[i].GetP2pkhScript() == script
+                                || this.externalPubKeys[i].GetP2wpkhScript() == script
+                                || this.externalPubKeys[i].GetP2shOverP2wpkhScript() == script)
                             {
                                 string oldLabel = this.externalPubKeys[i].Label;
                                 if (oldLabel == newLabel) return false;
@@ -597,36 +582,25 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         #endregion
 
         #region Equality
-
-        // speedup
-        private int? hashCode = null;
-        private int HashCode
-        {
-            get
-            {
-                return (int)(this.hashCode ?? (this.hashCode = this.ExtPubKey.PubKey.Hash.GetHashCode()));
-            }
-        }
-
+        
         // speedup
         private KeyId uniquePubKeyHash = null;
-        private KeyId UniquePubKeyHash
+        private KeyId GetUniquePubKeyHash()
         {
-            get
-            {
-                return this.uniquePubKeyHash ?? (this.uniquePubKeyHash = this.ExtPubKey.PubKey.Hash);
-            }
+            return this.uniquePubKeyHash ?? (this.uniquePubKeyHash = this.ExtPubKey.PubKey.Hash);
         }
 
         public override bool Equals(object obj) => obj is Bip44Account && this == (Bip44Account)obj;
         public bool Equals(Bip44Account other) => this == other;
+        // speedup
+        private int? hashCode = null;
         public override int GetHashCode()
         {
-            return this.HashCode;
+            return (int)(this.hashCode ?? (this.hashCode = this.ExtPubKey.PubKey.Hash.GetHashCode()));
         }
         public static bool operator ==(Bip44Account x, Bip44Account y)
         {
-            return x.UniquePubKeyHash == y.UniquePubKeyHash;
+            return x.GetUniquePubKeyHash() == y.GetUniquePubKeyHash();
         }
         public static bool operator !=(Bip44Account x, Bip44Account y)
         {

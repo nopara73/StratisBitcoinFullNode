@@ -25,130 +25,92 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
         private Script p2pkScript = null;
-        public Script P2pkScript
+        public Script GetP2pkScript()
         {
-            get
-            {
-                return this.p2pkScript ?? (this.p2pkScript = this.PubKey.ScriptPubKey);
-            }
+            return this.p2pkScript ?? (this.p2pkScript = this.PubKey.ScriptPubKey);
         }
 
         private Script p2pkhScript = null;
-        public Script P2pkhScript
+        public Script GetP2pkhScript()
         {
-            get
-            {
-                return this.p2pkhScript ?? (this.p2pkhScript = this.PubKey.Hash.ScriptPubKey);
-            }
+            return this.p2pkhScript ?? (this.p2pkhScript = this.PubKey.Hash.ScriptPubKey);
         }
 
         private Script p2wpkhScript = null;
-        public Script P2wpkhScript
+        public Script GetP2wpkhScript()
         {
-            get
-            {
-                return this.p2wpkhScript ?? (this.p2wpkhScript = this.PubKey.WitHash.ScriptPubKey);
-            }
+            return this.p2wpkhScript ?? (this.p2wpkhScript = this.PubKey.WitHash.ScriptPubKey);
         }
 
         private Script p2shOverP2wpkhScript = null;
-        public Script P2shOverP2wpkhScript
+        public Script GetP2shOverP2wpkhScript()
         {
-            get
-            {
-                return this.p2shOverP2wpkhScript ?? (this.p2shOverP2wpkhScript = this.P2wpkhScript.Hash.ScriptPubKey);
-            }
+            return this.p2shOverP2wpkhScript ?? (this.p2shOverP2wpkhScript = GetP2wpkhScript().Hash.ScriptPubKey);
         }
 
         private BitcoinPubKeyAddress p2pkhAddress = null;
-        public BitcoinPubKeyAddress P2pkhAddress
+        public BitcoinPubKeyAddress GetP2pkhAddress()
         {
-            get
-            {
-                return this.p2pkhAddress ?? (this.p2pkhAddress = this.PubKey.GetAddress(this.Network));
-            }
+            return this.p2pkhAddress ?? (this.p2pkhAddress = this.PubKey.GetAddress(this.Network));
         }
 
         private BitcoinWitPubKeyAddress p2wpkhAddress = null;
-        public BitcoinWitPubKeyAddress P2wpkhAddress
+        public BitcoinWitPubKeyAddress GetP2wpkhAddress()
         {
-            get
-            {
-                return this.p2wpkhAddress ?? (this.p2wpkhAddress = this.PubKey.GetSegwitAddress(this.Network));
-            }
+            return this.p2wpkhAddress ?? (this.p2wpkhAddress = this.PubKey.GetSegwitAddress(this.Network));
         }
 
         private BitcoinScriptAddress p2shOverP2wpkhAddress = null;
-        public BitcoinScriptAddress P2shOverP2wpkhAddress
+        public BitcoinScriptAddress GetP2shOverP2wpkhAddress()
         {
-            get
-            {
-                return this.p2shOverP2wpkhAddress ?? (this.p2shOverP2wpkhAddress = this.P2wpkhScript.GetScriptAddress(this.Network));
-            }
+            return this.p2shOverP2wpkhAddress ?? (this.p2shOverP2wpkhAddress = GetP2wpkhScript().GetScriptAddress(this.Network));
         }
 
         private int? index = null;
-        public int Index
+        public int GetIndex()
         {
-            get
-            {
-                return (int)(this.index ?? (this.index = (int)this.Bip44KeyPath.Indexes[4]));
-            }
+            return (int)(this.index ?? (this.index = (int)this.Bip44KeyPath.Indexes[4]));
         }
 
         private bool? isInternal = null;
-        public bool IsInternal
+        public bool IsInternal()
         {
-            get
+            if (this.isInternal == null)
             {
-                if (this.isInternal == null)
+                int change = (int)this.Bip44KeyPath.Indexes[3];
+                if (change == 0)
                 {
-                    int change = (int)this.Bip44KeyPath.Indexes[3];
-                    if (change == 0)
-                    {
-                        this.isInternal = false;
-                    }
-                    else if (change == 1)
-                    {
-                        this.isInternal = true;
-                    }
-                    else throw new ArgumentException(nameof(this.Bip44KeyPath));                    
+                    this.isInternal = false;
                 }
-                return (bool)this.isInternal;
+                else if (change == 1)
+                {
+                    this.isInternal = true;
+                }
+                else throw new ArgumentException(nameof(this.Bip44KeyPath));
             }
+            return (bool)this.isInternal;
         }
 
         #region Equality
-
-        // speedup
-        private int? hashCode = null;
-        private int HashCode
-        {
-            get
-            {
-                return (int)(this.hashCode ?? (this.hashCode = this.PubKey.Hash.GetHashCode()));
-            }
-        }
-
+        
         // speedup
         private KeyId pubKeyHash = null;
-        public KeyId PubKeyHash
+        public KeyId GetPubKeyHash()
         {
-            get
-            {
-                return this.pubKeyHash ?? (this.pubKeyHash = this.PubKey.Hash);
-            }
+            return this.pubKeyHash ?? (this.pubKeyHash = this.PubKey.Hash);
         }
 
         public override bool Equals(object obj) => obj is Bip44PubKey && this == (Bip44PubKey)obj;
         public bool Equals(Bip44PubKey other) => this == other;
+        // speedup
+        private int? hashCode = null;
         public override int GetHashCode()
         {
-            return this.HashCode;
+            return (int)(this.hashCode ?? (this.hashCode = this.PubKey.Hash.GetHashCode()));
         }
         public static bool operator ==(Bip44PubKey x, Bip44PubKey y)
         {
-            return x.PubKeyHash == y.PubKeyHash;
+            return x.GetPubKeyHash() == y.GetPubKeyHash();
         }
         public static bool operator !=(Bip44PubKey x, Bip44PubKey y)
         {
