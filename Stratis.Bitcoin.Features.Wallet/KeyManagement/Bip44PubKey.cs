@@ -1,4 +1,5 @@
 ﻿using NBitcoin;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,13 +7,19 @@ using System.Text;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
+    [JsonObject(MemberSerialization.OptIn)]
     public class Bip44PubKey : IEquatable<Bip44PubKey>
     {
+        [JsonProperty]
         public PubKey PubKey { get; }
+        [JsonProperty]
         public KeyPath Bip44KeyPath { get; }
+        [JsonProperty]
         public Network Network { get; }
 
+        [JsonProperty]
         public string Label { get; set; }
+        [JsonProperty]
         public Bip44KeyState State { get; set; }
 
         public Bip44PubKey(PubKey pubKey, KeyPath bip44KeyPath, Network network, string label, Bip44KeyState state)

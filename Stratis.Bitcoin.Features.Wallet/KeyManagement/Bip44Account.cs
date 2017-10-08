@@ -1,5 +1,6 @@
 ﻿using ConcurrentCollections;
 using NBitcoin;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -8,13 +9,23 @@ using System.Text;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
+    [JsonObject(MemberSerialization.OptIn)]
     public class Bip44Account : IEquatable<Bip44Account>
     {
+        [JsonProperty]
         public ExtPubKey ExtPubKey { get; }
+        [JsonProperty]
         public KeyPath Bip44KeyPath { get; }
+        [JsonProperty]
         public Network Network { get; }
 
+        [JsonProperty]
         public string Label { get; set; }
+
+        [JsonProperty]
+        private Bip44PubKey[] internalPubKeys = null;
+        [JsonProperty]
+        private Bip44PubKey[] externalPubKeys = null;
 
         public Bip44Account(ExtPubKey extPubKey, KeyPath bip44KeyPath, Network network, string label)
         {
@@ -55,10 +66,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         }
 
         #region OperationsOnPubKeyCollections
-
-        private Bip44PubKey[] internalPubKeys = null;
-        private Bip44PubKey[] externalPubKeys = null;
-
+        
         private object InternalPubKeysLock { get; } = new object();
         private object ExternalPubKeysLock { get; } = new object();
 

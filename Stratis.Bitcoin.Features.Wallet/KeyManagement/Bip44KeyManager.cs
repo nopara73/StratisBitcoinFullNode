@@ -1,5 +1,6 @@
 ﻿using NBitcoin;
 using Newtonsoft.Json;
+using Stratis.Bitcoin.Features.Wallet.JsonConverters;
 using Stratis.Bitcoin.Utilities.Extensions;
 using System;
 using System.Collections.Generic;
@@ -11,10 +12,21 @@ using System.Threading.Tasks;
 
 namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
+    [JsonObject(MemberSerialization.OptIn)]
     public class Bip44KeyManager
     {
+        [JsonProperty]
         public Network Network { get; private set; }
+        [JsonProperty]
         public DateTimeOffset CreationTime { get; set; }
+
+        [JsonProperty]
+        public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
+        [JsonProperty]
+        public byte[] ChainCode { get; private set; }
+
+        [JsonProperty]
+        private Bip44Account[] accounts = null;
 
         private KeyPath bip44CoinTypePath = null;
         public KeyPath GetBip44CoinTypePath()
@@ -29,9 +41,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
             return this.bip44CoinTypePath;
         }
-        
-        public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
-        public byte[] ChainCode { get; private set; }
 
         #region Initialization
 
@@ -213,7 +222,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         #region OperationsOnAccountsCollection
         
-        private Bip44Account[] accounts = null;
         private SemaphoreSlim AccountsSemaphore { get; } = new SemaphoreSlim(1, 1);
 
         public async Task CreateAccountAsync(string walletPassword, string label, CancellationToken cancel)
@@ -365,19 +373,18 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         #endregion
 
         #region Serialization
-
         public async Task ToFileAsync(string filePath, CancellationToken cancel)
         {
-            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-
             await Task.Run(() =>
             {
+                if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+
                 var settings = new JsonSerializerSettings
                 {
                     NullValueHandling = NullValueHandling.Ignore
                 };
 
-                string jsonString = JsonConvert.SerializeObject(this, settings);
+                string jsonString = JsonConvert.SerializeObject(this, Formatting.Indented, settings);
                 File.WriteAllText(filePath,
                 jsonString,
                 Encoding.UTF8);
@@ -386,27 +393,37 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         public async Task ToEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
         {
-            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-            if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
-
             await Task.Run(() =>
             {
+                if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+                if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
+
+                var settings = new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                };
+
                 File.WriteAllText(filePath,
-                StringCipher.Encrypt(JsonConvert.SerializeObject(this), encryptionPassword),
+                StringCipher.Encrypt(JsonConvert.SerializeObject(this, Formatting.None, settings), encryptionPassword),
                 Encoding.UTF8);
             }, cancel).ConfigureAwait(false);
         }
 
         public async Task InitializeFullyFromFileAsync(string filePath, CancellationToken cancel)
         {
-            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-            if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
-            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
-
             await Task.Run(() =>
             {
+                if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                var settings = new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                };
+
                 string jsonString = File.ReadAllText(filePath, Encoding.UTF8);
-                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
+                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString, settings);
                 InitializeAccounts(keyManager.Network, keyManager.accounts);
                 InitializeSeedFromEncryptedSecret(keyManager.Network, keyManager.EncryptedSecret, keyManager.ChainCode);
             }, cancel).ConfigureAwait(false);
@@ -414,16 +431,21 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         public async Task InitializeFullyFromEncyptedFileAsync(string filePath, string encryptionPassword, CancellationToken cancel)
         {
-            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-            if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
-            if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
-            if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
-
             await Task.Run(() =>
             {
+                if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+                if (encryptionPassword == null) throw new ArgumentNullException(nameof(encryptionPassword));
+                if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
+                if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+
+                var settings = new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                };
+
                 string encryptedJsonString = File.ReadAllText(filePath, Encoding.UTF8);
                 string jsonString = StringCipher.Decrypt(encryptedJsonString, encryptionPassword);
-                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
+                var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString, settings);
                 InitializeAccounts(keyManager.Network, keyManager.accounts);
                 InitializeSeedFromEncryptedSecret(keyManager.Network, keyManager.EncryptedSecret, keyManager.ChainCode);
             }, cancel).ConfigureAwait(false);
