@@ -16,9 +16,9 @@ namespace Stratis.Bitcoin.Features.Wallet.Tests
         [Fact]
         public void Foo()
         {
-            Bip44KeyManager km = new Bip44KeyManager(Network.Main);
+            Bip44KeyManager km = new Bip44KeyManager();
             var pw = "";
-            km.InitializeNewAsync( pw, pw, Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
+            km.InitializeNewAsync(Network.Main, pw, pw, Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
 
             km.CreateAccountAsync(pw, "i am label", CancellationToken.None).GetAwaiter().GetResult();
             var account = km.TryGetAccount(0);
@@ -33,7 +33,7 @@ namespace Stratis.Bitcoin.Features.Wallet.Tests
             }
             km.ToFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
 
-            var km2 = new Bip44KeyManager(Network.Main);
+            var km2 = new Bip44KeyManager();
             km2.InitializeFullyFromFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
             foreach(var pk in km2.TryGetAccount(0).GetPubKeys())
             {

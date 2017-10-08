@@ -13,13 +13,8 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 {
     public class Bip44KeyManager
     {
-        public Network Network { get; }
+        public Network Network { get; private set; }
         public DateTimeOffset CreationTime { get; set; }
-
-        public Bip44KeyManager(Network network)
-        {
-            this.Network = network ?? throw new ArgumentNullException(nameof(network));
-        }
 
         private KeyPath bip44CoinTypePath = null;
         public KeyPath GetBip44CoinTypePath()
@@ -58,13 +53,16 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
 
         private SemaphoreSlim InitializeSemaphore { get; } = new SemaphoreSlim(1, 1);
 
-        public void InitializeAccounts(params Bip44Account[] accounts)
+        public void InitializeAccounts(Network network, params Bip44Account[] accounts)
         {
             this.AccountsSemaphore.Wait();
             this.InitializeSemaphore.Wait();
             try
             {
                 if (accounts == null) throw new ArgumentNullException(nameof(accounts));
+                if (network == null) throw new ArgumentNullException(nameof(network));
+                if (this.Network == null) this.Network = network;
+                else if (this.Network != network) throw new ArgumentException(nameof(network));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
 
                 for (var i = 0; i < accounts.Length; i++)
@@ -81,12 +79,15 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public void InitializeSeedFromEncryptedSecret(BitcoinEncryptedSecretNoEC encrypetedSecret, byte[] chainCode)
+        public void InitializeSeedFromEncryptedSecret(Network network, BitcoinEncryptedSecretNoEC encrypetedSecret, byte[] chainCode)
         {
             this.InitializeSemaphore.Wait();
             try
             {
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
+                if (network == null) throw new ArgumentNullException(nameof(network));
+                if (this.Network == null) this.Network = network;
+                else if (this.Network != network) throw new ArgumentException(nameof(network));
 
                 this.EncryptedSecret = encrypetedSecret ?? throw new ArgumentNullException(nameof(encrypetedSecret));
                 this.ChainCode = chainCode ?? throw new ArgumentNullException(nameof(chainCode));
@@ -97,13 +98,16 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task InitializeSeedFromExtKeyAsync(ExtKey extKey, string walletPassword, CancellationToken cancel)
+        public async Task InitializeSeedFromExtKeyAsync(Network network, ExtKey extKey, string walletPassword, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
             {
                 if (extKey == null) throw new ArgumentNullException(nameof(extKey));
                 if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
+                if (network == null) throw new ArgumentNullException(nameof(network));
+                if (this.Network == null) this.Network = network;
+                else if (this.Network != network) throw new ArgumentException(nameof(network));
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
 
                 if (this.IsAccountsInitialized)
@@ -135,7 +139,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task InitializeSeedFromMnemonicAsync(string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
+        public async Task InitializeSeedFromMnemonicAsync(Network network, string walletPassword, string mnemonicSalt, Mnemonic mnemonic, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
@@ -143,6 +147,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
                 if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
                 if (mnemonic == null) throw new ArgumentNullException(nameof(mnemonic));
+                if (network == null) throw new ArgumentNullException(nameof(network));
+                if (this.Network == null) this.Network = network;
+                else if (this.Network != network) throw new ArgumentException(nameof(network));
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
 
                 ExtKey extKey = mnemonic.DeriveExtKey(mnemonicSalt);
@@ -176,13 +183,14 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             }
         }
 
-        public async Task<Mnemonic> InitializeNewAsync(string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
+        public async Task<Mnemonic> InitializeNewAsync(Network network, string walletPassword, string mnemonicSalt, Wordlist wordlist, WordCount wordCount, CancellationToken cancel)
         {
             await this.InitializeSemaphore.WaitAsync(cancel).ConfigureAwait(false);
             try
             {
                 if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
                 if (mnemonicSalt == null) throw new ArgumentNullException(nameof(mnemonicSalt));
+                this.Network = network ?? throw new ArgumentNullException(nameof(network));
                 if (wordlist == null) throw new ArgumentNullException(nameof(wordlist));
                 if (this.IsAccountsInitialized) throw new InvalidOperationException("Accounts are already initialized");
                 if (this.IsSeedInitialized) throw new InvalidOperationException("Seed is already initialized");
@@ -399,8 +407,8 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
             {
                 string jsonString = File.ReadAllText(filePath, Encoding.UTF8);
                 var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
-                InitializeAccounts(keyManager.accounts);
-                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
+                InitializeAccounts(keyManager.Network, keyManager.accounts);
+                InitializeSeedFromEncryptedSecret(keyManager.Network, keyManager.EncryptedSecret, keyManager.ChainCode);
             }, cancel).ConfigureAwait(false);
         }
 
@@ -416,8 +424,8 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 string encryptedJsonString = File.ReadAllText(filePath, Encoding.UTF8);
                 string jsonString = StringCipher.Decrypt(encryptedJsonString, encryptionPassword);
                 var keyManager = JsonConvert.DeserializeObject<Bip44KeyManager>(jsonString);
-                InitializeAccounts(keyManager.accounts);
-                InitializeSeedFromEncryptedSecret(keyManager.EncryptedSecret, keyManager.ChainCode);
+                InitializeAccounts(keyManager.Network, keyManager.accounts);
+                InitializeSeedFromEncryptedSecret(keyManager.Network, keyManager.EncryptedSecret, keyManager.ChainCode);
             }, cancel).ConfigureAwait(false);
         }
 
