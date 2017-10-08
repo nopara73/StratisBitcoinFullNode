@@ -20,9 +20,12 @@ namespace Stratis.Bitcoin.Features.Wallet.Tests
             var pw = "";
             km.InitializeNewAsync( pw, pw, Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
 
-            km.CreateAccountAsync(pw, "", CancellationToken.None).GetAwaiter().GetResult();
+            km.CreateAccountAsync(pw, "i am label", CancellationToken.None).GetAwaiter().GetResult();
             var account = km.TryGetAccount(0);
+            var label = account.Label;
+            Debug.WriteLine(label);
             account.CreatePubKeys(false, "", 20);
+            account.CreatePubKeys(true, "", 20);
             var pubKeys = account.GetPubKeys();
             foreach (var pk in pubKeys)
             {

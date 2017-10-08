@@ -208,7 +208,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         private Bip44Account[] accounts = null;
         private SemaphoreSlim AccountsSemaphore { get; } = new SemaphoreSlim(1, 1);
 
-        public async Task<Bip44Account> CreateAccountAsync(string walletPassword, string label, CancellationToken cancel)
+        public async Task CreateAccountAsync(string walletPassword, string label, CancellationToken cancel)
         {
             if (label == null) throw new ArgumentNullException(nameof(label));
             if (walletPassword == null) throw new ArgumentNullException(nameof(walletPassword));
@@ -233,7 +233,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                 KeyPath keyPath = this.GetBip44CoinTypePath().Derive(index, true);
                 ExtPubKey extPubKey = extKey.Derive(keyPath).Neuter();
                 this.accounts[index] = new Bip44Account(extPubKey, keyPath, this.Network, label);
-                return this.accounts[index];
             }
             finally
             {

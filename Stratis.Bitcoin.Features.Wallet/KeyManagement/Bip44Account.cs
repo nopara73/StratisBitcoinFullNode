@@ -62,7 +62,7 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
         private object InternalPubKeysLock { get; } = new object();
         private object ExternalPubKeysLock { get; } = new object();
 
-        public IEnumerable<Bip44PubKey> CreatePubKeys(bool isInternal, string label, int count)
+        public void CreatePubKeys(bool isInternal, string label, int count)
         {
             if (count <= 0) throw new ArgumentOutOfRangeException(nameof(count));
 
@@ -84,10 +84,9 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                     
                     for(var i = firstIndex; i < firstIndex + count; i++)
                     {
-                        KeyPath keyPath = this.internalChainKeyPath.Derive(i, false);
+                        KeyPath keyPath = GetInternalChainKeyPath().Derive(i, false);
                         PubKey pubKey = GetInternalChainExtPubKey().Derive(i, false).PubKey;
                         this.internalPubKeys[i] = new Bip44PubKey(pubKey, keyPath, this.Network, label, Bip44KeyState.Clean);
-                        yield return this.internalPubKeys[i];
                     }
                 }
             }
@@ -112,7 +111,6 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
                         KeyPath keyPath = GetExternalChainKeyPath().Derive(i, false);
                         PubKey pubKey = GetExternalChainExtPubKey().Derive(i, false).PubKey;
                         this.externalPubKeys[i] = new Bip44PubKey(pubKey, keyPath, this.Network, label, Bip44KeyState.Clean);
-                        yield return this.externalPubKeys[i];
                     }
                 }
             }
