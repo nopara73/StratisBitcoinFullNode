@@ -14,7 +14,6 @@ using Stratis.Bitcoin.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using IBlockRepository = Stratis.Bitcoin.Features.BlockStore.IBlockRepository;
 
@@ -295,7 +294,7 @@ namespace Stratis.Bitcoin.Features.Miner
                 }
 
                 if (blockTemplate == null)
-                    blockTemplate = this.blockAssemblerFactory.Create(new AssemblerOptions() { IsProofOfStake = true }).CreateNewBlock(new Script());
+                    blockTemplate = this.blockAssemblerFactory.Create(chainTip, new AssemblerOptions() { IsProofOfStake = true }).CreateNewBlock(new Script());
 
                 Block block = blockTemplate.Block;
 
@@ -304,6 +303,7 @@ namespace Stratis.Bitcoin.Features.Miner
 
                 FetchCoinsResponse coinset = this.coinView.FetchCoinsAsync(spendable.Select(t => t.Transaction.Id).ToArray()).GetAwaiter().GetResult();
 
+                long totalBalance = 0;
                 foreach (UnspentOutputReference infoTransaction in spendable)
                 {
                     UnspentOutputs set = coinset.UnspentOutputs.FirstOrDefault(f => f?.TransactionId == infoTransaction.Transaction.Id);
@@ -321,9 +321,13 @@ namespace Stratis.Bitcoin.Features.Miner
                         stakeTx.UtxoSet = set;
                         stakeTx.Secret = walletSecret; // Temporary.
                         stakeTxes.Add(stakeTx);
+
+                        totalBalance += utxo.Value;
                         this.logger.LogTrace("UTXO '{0}/{1}' with value {2} might be available for staking.", stakeTx.OutPoint.Hash, stakeTx.OutPoint.N, utxo.Value);
                     }
                 }
+
+                this.logger.LogTrace("Wallet contains {0} coins.", new Money(totalBalance));
 
                 this.rpcGetStakingInfoModel.CurrentBlockSize = block.GetSerializedSize();
                 this.rpcGetStakingInfoModel.CurrentBlockTx = block.Transactions.Count();
@@ -336,7 +340,7 @@ namespace Stratis.Bitcoin.Features.Miner
                 {
                     this.logger.LogTrace("POS block signed successfully.");
                     var blockResult = new BlockResult { Block = block };
-                    this.CheckStake(new ContextInformation(blockResult, chainTip, this.network.Consensus), chainTip);
+                    this.CheckStake(new ContextInformation(blockResult, this.network.Consensus), chainTip);
 
                     blockTemplate = null;
                 }
@@ -409,38 +413,6 @@ namespace Stratis.Bitcoin.Features.Miner
             this.logger.LogInformation("==================================================================");
             this.logger.LogInformation("Found new POS block hash '{0}' at height {1}.", context.BlockResult.ChainedBlock.HashBlock, context.BlockResult.ChainedBlock.Height);
             this.logger.LogInformation("==================================================================");
-
-            // Wait for peers to get the block.
-            this.logger.LogTrace("Waiting 1000 ms for newly minted block propagation...");
-            Task.Delay(TimeSpan.FromMilliseconds(1000), this.nodeLifetime.ApplicationStopping).GetAwaiter().GetResult();
-
-            // Ask peers for their headers.
-            foreach (Node node in this.connection.ConnectedNodes)
-            {
-                this.logger.LogTrace("Updating headers of peer '{0}'.", node.RemoteSocketEndpoint);
-                node.Behavior<ChainHeadersBehavior>().TrySync();
-            }
-
-            // Wait for all peers to accept the block.
-            this.logger.LogTrace("Waiting up to 100 seconds for peers to accept the new block...");
-            int retry = 0;
-            foreach (Node node in this.connection.ConnectedNodes)
-            {
-                this.logger.LogTrace("Waiting for peer '{0}' to accept the new block...", node.RemoteSocketEndpoint);
-                ChainHeadersBehavior chainBehaviour = node.Behavior<ChainHeadersBehavior>();
-                while ((++retry < 100) && (chainBehaviour.PendingTip != this.chain.Tip))
-                {
-                    this.logger.LogTrace("Peer '{0}' still has different tip ('{1}/{2}'), waiting 1000 ms...", node.RemoteSocketEndpoint, chainBehaviour.PendingTip.HashBlock, chainBehaviour.PendingTip.Height);
-                    Task.Delay(TimeSpan.FromMilliseconds(1000), this.nodeLifetime.ApplicationStopping).GetAwaiter().GetResult();
-                }
-            }
-
-            if (retry == 100)
-            {
-                // Seems the block was not accepted.
-                this.logger.LogTrace("Our newly minted block was rejected by peers.");
-                throw new MinerException("Block rejected by peers");
-            }
         }
 
         /// <summary>
@@ -645,7 +617,7 @@ namespace Stratis.Bitcoin.Features.Miner
                         var prevoutStake = new OutPoint(coin.UtxoSet.TransactionId, coin.OutputIndex);
                         long nBlockTime = 0;
 
-                        var context = new ContextInformation(new BlockResult { Block = block }, chainTip, this.network.Consensus);
+                        var context = new ContextInformation(new BlockResult { Block = block }, this.network.Consensus);
                         context.SetStake();
                         this.posConsensusValidator.StakeValidator.CheckKernel(context, chainTip, block.Header.Bits, txTime, prevoutStake, ref nBlockTime);
 
@@ -884,9 +856,10 @@ namespace Stratis.Bitcoin.Features.Miner
                     continue;
                 }
 
-                if (this.GetBlocksToMaturity(stakeTx) > 0)
+                int toMaturity = this.GetBlocksToMaturity(stakeTx);
+                if (toMaturity > 0)
                 {
-                    this.logger.LogTrace("UTXO '{0}/{1}' can't be added because it is not mature.", stakeTx.OutPoint.Hash, stakeTx.OutPoint.N);
+                    this.logger.LogTrace("UTXO '{0}/{1}' can't be added because it is not mature, {2} blocks to maturity left.", stakeTx.OutPoint.Hash, stakeTx.OutPoint.N, toMaturity);
                     continue;
                 }
 
