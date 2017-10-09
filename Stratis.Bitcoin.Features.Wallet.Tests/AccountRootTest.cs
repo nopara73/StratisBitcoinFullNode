@@ -16,30 +16,10 @@ namespace Stratis.Bitcoin.Features.Wallet.Tests
         [Fact]
         public void Foo()
         {
-            Bip44KeyManager km = new Bip44KeyManager();
-            var pw = "";
-            km.InitializeNewAsync(Network.Main, pw, pw, Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
-
-            km.CreateAccountAsync(pw, "i am label", CancellationToken.None).GetAwaiter().GetResult();
-            var account = km.TryGetAccount(0);
-            var label = account.Label;
-            Debug.WriteLine(label);
-            account.CreatePubKeys(false, "", 20);
-            account.CreatePubKeys(true, "", 20);
-            var pubKeys = account.GetPubKeys();
-            foreach (var pk in pubKeys)
-            {
-                Debug.WriteLine(pk.GetP2wpkhAddress());
-            }
-            km.ToFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
-
-            var km2 = new Bip44KeyManager();
-            km2.InitializeFullyFromFileAsync("foo.wallet.txt", CancellationToken.None).GetAwaiter().GetResult();
-            foreach(var pk in km2.TryGetAccount(0).GetPubKeys())
-            {
-                Debug.WriteLine(pk.GetP2wpkhAddress());
-            }
-
+            var keyManager = new Bip44KeyManager();
+            keyManager.InitializeNewAsync(Network.Main, "", "", Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
+            var account = keyManager.GetAccounts("").First();
+            Bip44PubKey pubKey = account.TryGetPubKey(true, 2);
         }
         [Fact]
         public void GetFirstUnusedAccountWithoutAccountsReturnsNull()
