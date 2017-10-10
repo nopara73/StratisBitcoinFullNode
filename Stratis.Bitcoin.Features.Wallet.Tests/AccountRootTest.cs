@@ -18,8 +18,22 @@ namespace Stratis.Bitcoin.Features.Wallet.Tests
         {
             var keyManager = new Bip44KeyManager();
             keyManager.InitializeNewAsync(Network.Main, "", "", Wordlist.English, WordCount.Twelve, CancellationToken.None).GetAwaiter().GetResult();
-            var account = keyManager.GetAccounts("").First();
-            Bip44PubKey pubKey = account.TryGetPubKey(true, 2);
+            keyManager.CreateAccountAsync("", "", CancellationToken.None).GetAwaiter().GetResult();
+            var account = keyManager.TryGetAccount(0);
+            account.CreatePubKeys(true, "change", 100);
+            account.CreatePubKeys(false, "receive", 1000);
+            foreach (var pubKey in keyManager.TryGetAccount(0).GetPubKeys())
+            {
+                Debug.WriteLine(pubKey.GetP2pkhAddress());
+            }
+            keyManager.ToEncyptedFileAsync("foo.txt", "pass", CancellationToken.None).GetAwaiter().GetResult();
+            var keyManager2 = new Bip44KeyManager();
+            keyManager2.InitializeFullyFromEncyptedFileAsync("foo.txt", "pass", CancellationToken.None).GetAwaiter().GetResult();
+
+            foreach(var pubKey in keyManager2.TryGetAccount(0).GetPubKeys())
+            {
+                Debug.WriteLine(pubKey.GetP2pkhAddress());
+            }
         }
         [Fact]
         public void GetFirstUnusedAccountWithoutAccountsReturnsNull()

@@ -1,5 +1,7 @@
 ﻿using NBitcoin;
+using NBitcoin.JsonConverters;
 using Newtonsoft.Json;
+using Stratis.Bitcoin.Features.Wallet.JsonConverters;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,16 +12,19 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
     [JsonObject(MemberSerialization.OptIn)]
     public class Bip44PubKey : IEquatable<Bip44PubKey>
     {
-        [JsonProperty]
+        [JsonProperty(PropertyName = "pubKey")]
+        [JsonConverter(typeof(PubKeyConverter))]
         public PubKey PubKey { get; }
-        [JsonProperty]
+        [JsonProperty(PropertyName = "keyPath")]
+        [JsonConverter(typeof(KeyPathJsonConverter))]
         public KeyPath Bip44KeyPath { get; }
-        [JsonProperty]
+        [JsonProperty(PropertyName = "network")]
+        [JsonConverter(typeof(NetworkConverter))]
         public Network Network { get; }
 
-        [JsonProperty]
+        [JsonProperty(PropertyName = "label")]
         public string Label { get; set; }
-        [JsonProperty]
+        [JsonProperty(PropertyName = "state")]
         public Bip44KeyState State { get; set; }
 
         public Bip44PubKey(PubKey pubKey, KeyPath bip44KeyPath, Network network, string label, Bip44KeyState state)
