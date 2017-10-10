@@ -14,22 +14,25 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
     [JsonObject(MemberSerialization.OptIn)]
     public class Bip44Account : IEquatable<Bip44Account>
     {
-        [JsonProperty(PropertyName = "extPubKey")]
+        [JsonProperty(PropertyName = "extPubKey", Order = 1)]
         [JsonConverter(typeof(ExtPubKeyConverter))]
         public ExtPubKey ExtPubKey { get; }
-        [JsonProperty(PropertyName = "keyPath")]
+
+        [JsonProperty(PropertyName = "keyPath", Order = 2)]
         [JsonConverter(typeof(KeyPathJsonConverter))]
         public KeyPath Bip44KeyPath { get; }
-        [JsonProperty(PropertyName = "network")]
+
+        [JsonProperty(PropertyName = "network", Order = 3)]
         [JsonConverter(typeof(NetworkConverter))]
         public Network Network { get; }
 
-        [JsonProperty(PropertyName = "label")]
+        [JsonProperty(PropertyName = "label", Order = 4)]
         public string Label { get; set; }
 
-        [JsonProperty(PropertyName = "internalPubKeys")]
+        [JsonProperty(PropertyName = "internalPubKeys", Order = 5)]
         private Bip44PubKey[] internalPubKeys = null;
-        [JsonProperty(PropertyName = "externalPubKeys")]
+
+        [JsonProperty(PropertyName = "externalPubKeys", Order = 6)]
         private Bip44PubKey[] externalPubKeys = null;
 
         public Bip44Account(ExtPubKey extPubKey, KeyPath bip44KeyPath, Network network, string label)

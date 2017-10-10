@@ -16,21 +16,23 @@ namespace Stratis.Bitcoin.Features.Wallet.KeyManagement
     [JsonObject(MemberSerialization.OptIn)]
     public class Bip44KeyManager
     {
-        [JsonProperty(PropertyName = "network")]
+        [JsonProperty(PropertyName = "network", Order = 1)]
         [JsonConverter(typeof(NetworkConverter))]
         public Network Network { get; private set; }
-        [JsonProperty(PropertyName = "creationTime")]
+
+        [JsonProperty(PropertyName = "creationTime", Order = 2)]
         [JsonConverter(typeof(DateTimeOffsetConverter))]
         public DateTimeOffset CreationTime { get; set; }
 
-        [JsonProperty(PropertyName = "encryptedSecret")]
+        [JsonProperty(PropertyName = "encryptedSecret", Order = 3)]
         [JsonConverter(typeof(BitcoinEncryptedSecretNoECConverter))]
         public BitcoinEncryptedSecretNoEC EncryptedSecret { get; private set; }
-        [JsonProperty(PropertyName = "chainCode")]
+
+        [JsonProperty(PropertyName = "chainCode", Order = 4)]
         [JsonConverter(typeof(ByteArrayConverter))]
         public byte[] ChainCode { get; private set; }
 
-        [JsonProperty(PropertyName = "accounts")]
+        [JsonProperty(PropertyName = "accounts", Order = 5)]
         private Bip44Account[] accounts = null;
 
         private KeyPath bip44CoinTypePath = null;
